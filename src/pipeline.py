@@ -34,7 +34,7 @@ from src.publish.telegram import (
 )
 from src.renderers.factory import get_renderer
 from src.rewrite.cursor_rewriter import CursorRewriter
-from src.run_report import RunReport
+from src.run_report import RunReport, install_redact_logging
 from src.visuals.pexels import PexelsClient
 from src.voice.elevenlabs import ElevenLabsVoice
 
@@ -42,6 +42,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+install_redact_logging()
 logger = logging.getLogger("pipeline")
 
 
@@ -113,7 +114,10 @@ class Pipeline:
 
         processed = 0
         last_error = ""
-        for meta in sources[: self.settings.max_videos_per_run]:
+        # Try several discovered sources until we successfully finish max_videos_per_run
+        for meta in sources:
+            if processed >= self.settings.max_videos_per_run:
+                break
             if report:
                 report.add_source(meta)
             try:
@@ -128,7 +132,7 @@ class Pipeline:
                     report.errors.append(f"{meta.source_id}: {exc}")
                 self._tg(
                     f"❌ Не смог собрать ролик из «{meta.title}»\n"
-                    f"{meta.url}\n\nОшибка: {exc}"
+                    f"{meta.url}\n\nОшибка: {exc}\nПробую следующий источник…"
                 )
         if processed == 0 and last_error:
             if report:

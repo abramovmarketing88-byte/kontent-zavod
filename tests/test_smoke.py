@@ -23,6 +23,19 @@ def test_check_run_once_consumes_before_run() -> None:
     assert "flock" in script
 
 
+def test_redact_youtube_and_telegram_secrets() -> None:
+    from src.run_report import _redact
+
+    sample = (
+        "GET https://www.googleapis.com/youtube/v3/search?key=AIzaSyDummyKey1234567890 "
+        "https://api.telegram.org/bot123456:AAEdummyTokenValueHere/sendMessage"
+    )
+    out = _redact(sample)
+    assert "AIza" not in out
+    assert "AAEdummy" not in out
+    assert "***" in out
+
+
 def test_run_report_redacts_and_writes(tmp_path: Path) -> None:
     from src.config import InstagramNicheConfig, NicheConfig, Settings
     from src.run_report import RunReport, _redact
@@ -71,7 +84,6 @@ def test_run_report_redacts_and_writes(tmp_path: Path) -> None:
     assert "test-run" in md
     assert "empty" in md
     assert "secret" not in md.lower() or "has_cursor_key" in md
-
 
 
 def test_captions() -> None:

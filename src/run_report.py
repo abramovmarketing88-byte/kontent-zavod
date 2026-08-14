@@ -33,7 +33,14 @@ SECRET_ENV_KEYS = (
 )
 
 _SECRET_RE = re.compile(
-    r"(?i)(api[_-]?key|token|password|authorization|bearer)\s*[:=]\s*\S+"
+    r"(?i)("
+    r"(?:api[_-]?key|token|password|authorization|bearer)\s*[:=]\s*\S+"
+    r"|key=AIza[0-9A-Za-z_-]+"
+    r"|bot\d+:[A-Za-z0-9_-]+"
+    r"|sk-[A-Za-z0-9_-]{10,}"
+    r"|sk_or_v1_[A-Za-z0-9_-]+"
+    r"|cursor_[A-Za-z0-9_-]{10,}"
+    r")"
 )
 
 
@@ -42,7 +49,37 @@ def _utc_now() -> str:
 
 
 def _redact(text: str) -> str:
-    return _SECRET_RE.sub(r"\1=***", text)
+    text = _SECRET_RE.sub("***", text)
+    text = re.sub(r"(?i)([?&]key=)[^&\s]+", r"\1***", text)
+    text = re.sub(r"(?i)(api\.telegram\.org/bot)[^/\s]+", r"\1***", text)
+    return text
+
+
+class RedactFilter(logging.Filter):
+    """Keep secrets out of log files / report tails."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            if isinstance(record.msg, str):
+                record.msg = _redact(record.msg)
+            if record.args:
+                if isinstance(record.args, dict):
+                    record.args = {k: _redact(str(v)) for k, v in record.args.items()}
+                elif isinstance(record.args, tuple):
+                    record.args = tuple(
+                        _redact(str(a)) if not isinstance(a, (int, float)) else a
+                        for a in record.args
+                    )
+        except Exception:
+            pass
+        return True
+
+
+def install_redact_logging() -> None:
+    root = logging.getLogger()
+    if any(isinstance(f, RedactFilter) for f in root.filters):
+        return
+    root.addFilter(RedactFilter())
 
 
 @dataclass

@@ -107,7 +107,8 @@ class YouTubeDiscoverer:
                     candidates[vid] = meta
 
         ranked = sorted(candidates.values(), key=lambda m: m.score, reverse=True)
-        cap = limit or self.settings.max_videos_per_run
+        # Keep a pool so pipeline can skip sources that fail to download (503 etc.)
+        cap = limit or max(self.settings.max_videos_per_run * 5, 10)
         return ranked[:cap]
 
     def _search(
