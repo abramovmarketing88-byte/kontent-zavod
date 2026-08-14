@@ -2,7 +2,12 @@
 # Pull latest code from GitHub, rebuild Docker image, run one-off if triggered
 set -eu
 cd /opt/kontent-zavod
-mkdir -p logs
+mkdir -p logs data
+# Do not git-reset / rebuild while a run-once is in progress (avoids killing a long render)
+if [ -f data/run-once.lock ] && ! flock -n data/run-once.lock true; then
+  echo "$(date -Is) skip auto_update: run-once in progress" >> logs/update.log
+  exit 0
+fi
 git fetch origin main
 git reset --hard origin/main
 sed -i 's/\r$//' scripts/*.sh

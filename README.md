@@ -6,7 +6,7 @@
 
 Сервер сам **не** смотрит лейблы GitHub напрямую. Каждые 15 минут он делает `git pull` `main`. Если в `triggers/run-once.id` новый id — сразу собирает один ролик и шлёт его в Telegram (тот же бот, что в `mcp.json`).
 
-После мержа этого механизма в `main`:
+Триггер **сразу помечается выполненным** (чтобы cron не слал «⏳» каждые 15 минут). Если сборка упала — в личку придёт ❌/💥 с текстом ошибки; повтор только новым заказом.
 
 1. **GitHub → Actions → "Run once now" → Run workflow**
 2. Или лейбл **`run-now`** на Issue
@@ -15,9 +15,12 @@
 
 ```bash
 bash /opt/kontent-zavod/scripts/run_once.sh
+# диагностика:
+tail -n 80 /opt/kontent-zavod/logs/pipeline.last.log
+tail -n 40 /opt/kontent-zavod/logs/run-once.log
 ```
 
-В личку сначала придёт «⏳ Разовый заказ…», потом разбор залетевшего Reels и готовый mp4.
+В личку: «⏳…» → разбор Reels → готовый mp4 (или ❌ с причиной).
 
 ## Быстрый старт
 

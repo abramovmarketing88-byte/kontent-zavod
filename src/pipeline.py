@@ -26,7 +26,11 @@ from src.jobs import (
     write_transcript,
 )
 from src.models import JobStatus, today_output_dir
-from src.publish.telegram import notify_owner, send_message, send_source_breakdown
+from src.publish.telegram import (
+    notify_owner,
+    send_message,
+    send_source_breakdown,
+)
 from src.renderers.factory import get_renderer
 from src.rewrite.cursor_rewriter import CursorRewriter
 from src.visuals.pexels import PexelsClient
@@ -57,20 +61,45 @@ class Pipeline:
             self._analyzer = Analyzer(self.settings)
         return self._analyzer
 
+    def _tg(self, text: str) -> None:
+        if not self.settings.telegram_notify:
+            return
+        try:
+            send_message(
+                self.settings.telegram_bot_token,
+                self.settings.telegram_owner_chat_id,
+                text,
+            )
+        except Exception as exc:
+            logger.warning("Telegram notify failed: %s", exc)
+
     def run_once(self) -> int:
         sources = discover_sources(self.settings, self.db)
         if not sources:
             logger.info("No new sources to process")
+            self._tg(
+                "⚠️ Разовый заказ: новых залетевших Reels не нашёл "
+                "(все уже в базе или ниже порога просмотров).\n"
+                "Кинь ссылку в inbox/urls.txt или подними min_views / дождись свежих."
+            )
             return 0
 
         processed = 0
+        last_error = ""
         for meta in sources[: self.settings.max_videos_per_run]:
             try:
                 self._process_one(meta)
                 processed += 1
             except Exception as exc:
+                last_error = str(exc)
                 logger.exception("Failed to process %s: %s", meta.source_id, exc)
                 self.db.update_status(meta.source_id, JobStatus.FAILED, str(exc))
+                self._tg(
+                    f"❌ Не смог собрать ролик из «{meta.title}»\n"
+                    f"{meta.url}\n\nОшибка: {exc}"
+                )
+        if processed == 0 and last_error:
+            raise RuntimeError(f"All videos failed; last error: {last_error}")
         return processed
 
     def _process_one(self, meta) -> None:
@@ -215,6 +244,19 @@ def _notify_run_start(settings: Settings) -> None:
     logger.info("Sent run-once start ping to Telegram")
 
 
+def _notify_run_crash(settings: Settings, exc: BaseException) -> None:
+    if not settings.telegram_notify:
+        return
+    try:
+        send_message(
+            settings.telegram_bot_token,
+            settings.telegram_owner_chat_id,
+            f"💥 Разовый заказ упал: {exc}\nСмотри logs/pipeline.last.log на сервере.",
+        )
+    except Exception as notify_exc:
+        logger.warning("Failed to send crash notify: %s", notify_exc)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Kontent Zavod — faceless Reels factory")
     parser.add_argument(
@@ -234,10 +276,18 @@ def main() -> None:
     pipeline = Pipeline(settings)
 
     if args.notify_start:
-        _notify_run_start(settings)
+        try:
+            _notify_run_start(settings)
+        except Exception as exc:
+            logger.exception("Start notify failed: %s", exc)
 
     if args.once:
-        count = pipeline.run_once()
+        try:
+            count = pipeline.run_once()
+        except Exception as exc:
+            logger.exception("Pipeline --once failed: %s", exc)
+            _notify_run_crash(settings, exc)
+            sys.exit(1)
         logger.info("Done. Processed %d video(s).", count)
         sys.exit(0)
 

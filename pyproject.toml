@@ -22,6 +22,9 @@ dependencies = [
 [project.scripts]
 kontent-zavod = "src.pipeline:main"
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"

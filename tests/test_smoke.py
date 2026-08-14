@@ -15,6 +15,14 @@ def test_run_once_trigger_file() -> None:
     assert p.read_text(encoding="utf-8").strip()
 
 
+def test_check_run_once_consumes_before_run() -> None:
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "check_run_once.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "Mark consumed immediately" in script or "echo \"$NEW_ID\" > \"$STATE_FILE\"" in script
+    assert "flock" in script
+
+
 def test_captions() -> None:
     words = [
         WordTiming(word="Привет", start=0.0, end=0.5),
