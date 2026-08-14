@@ -1,0 +1,16 @@
+services:
+  worker:
+    build: .
+    env_file: .env
+    network_mode: host
+    environment:
+      HTTP_PROXY: http://127.0.0.1:7890
+      HTTPS_PROXY: http://127.0.0.1:7890
+      NO_PROXY: localhost,127.0.0.1,192.168.0.0/16
+    volumes:
+      - ./output:/app/output
+      - ./jobs:/app/jobs
+      - ./data:/app/data
+      - ./inbox:/app/inbox
+      - ./brand:/app/brand
+      - ./config:/app/config

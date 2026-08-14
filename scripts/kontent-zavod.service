@@ -1,0 +1,17 @@
+[Unit]
+Description=Kontent Zavod — daily Reels pipeline
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/kontent-zavod
+Environment=PROJECT_ROOT=/opt/kontent-zavod
+EnvironmentFile=/opt/kontent-zavod/.env
+ExecStart=/usr/local/bin/python -m src.pipeline
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

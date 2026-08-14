@@ -1,0 +1,13 @@
+.env
+__pycache__
+*.py[cod]
+*.egg-info
+.venv
+venv
+jobs
+output
+data
+*.db
+*.mp3
+*.mp4
+.git
