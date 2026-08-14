@@ -23,6 +23,57 @@ def test_check_run_once_consumes_before_run() -> None:
     assert "flock" in script
 
 
+def test_run_report_redacts_and_writes(tmp_path: Path) -> None:
+    from src.config import InstagramNicheConfig, NicheConfig, Settings
+    from src.run_report import RunReport, _redact
+
+    assert "***" in _redact("api_key=sk-secret-value")
+
+    settings = Settings(
+        root=tmp_path,
+        data_dir=tmp_path / "data",
+        jobs_dir=tmp_path / "jobs",
+        output_dir=tmp_path / "output",
+        inbox_dir=tmp_path / "inbox",
+        brand_dir=tmp_path / "brand",
+        config_dir=tmp_path / "config",
+        db_path=tmp_path / "data" / "factory.db",
+        cursor_api_key="secret",
+        elevenlabs_api_key="",
+        elevenlabs_voice_id="",
+        youtube_api_key="",
+        pexels_api_key="",
+        llm_api_key="",
+        llm_base_url=None,
+        llm_model="gpt-4o-mini",
+        heygen_api_key="",
+        heygen_avatar_id="",
+        heygen_intro_sec=8.0,
+        renderer="faceless",
+        telegram_bot_token="",
+        telegram_owner_chat_id="",
+        telegram_notify=False,
+        max_videos_per_run=1,
+        schedule_hours=6,
+        daily_at="09:00",
+        schedule_tz="Europe/Moscow",
+        whisper_model="base",
+        transcribe_backend="faster_whisper",
+        target_duration_min=30.0,
+        target_duration_max=40.0,
+        niche=NicheConfig(),
+        instagram=InstagramNicheConfig(),
+    )
+    report = RunReport(settings, run_id="test-run")
+    report.stage("discover")
+    report.complete(0, empty=True)
+    md = (tmp_path / "reports" / "last-run.md").read_text(encoding="utf-8")
+    assert "test-run" in md
+    assert "empty" in md
+    assert "secret" not in md.lower() or "has_cursor_key" in md
+
+
+
 def test_captions() -> None:
     words = [
         WordTiming(word="Привет", start=0.0, end=0.5),

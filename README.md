@@ -20,7 +20,19 @@ tail -n 80 /opt/kontent-zavod/logs/pipeline.last.log
 tail -n 40 /opt/kontent-zavod/logs/run-once.log
 ```
 
-В личку: «⏳…» → разбор Reels → готовый mp4 (или ❌ с причиной).
+В личку: «⏳…» → разбор Reels → готовый mp4 (или ❌ с причиной + файл `last-run.md`).
+
+### Логи для отладки (чтобы агент видел проблему)
+
+На сервере после прогона:
+
+```bash
+cat /opt/kontent-zavod/reports/last-run.md
+tail -n 100 /opt/kontent-zavod/logs/pipeline.last.log
+```
+
+При падении бот присылает **`last-run.md`** в Telegram.  
+Опционально сервер пушит тот же отчёт в ветку **`run-reports`** (нужен `GITHUB_TOKEN` или write deploy key) — тогда агент читает его прямо с GitHub.
 
 ## Быстрый старт
 

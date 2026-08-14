@@ -141,3 +141,35 @@ def notify_owner(
 ) -> dict:
     """Deliver rendered video to owner's private chat."""
     return send_video(bot_token, owner_chat_id, video_path, caption)
+
+
+def send_document(
+    bot_token: str,
+    chat_id: str,
+    file_path: Path,
+    caption: str = "",
+) -> dict:
+    if not bot_token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
+    if not chat_id:
+        raise RuntimeError("TELEGRAM_OWNER_CHAT_ID not set")
+    if not file_path.exists():
+        raise FileNotFoundError(file_path)
+
+    url = API.format(token=bot_token, method="sendDocument")
+    with file_path.open("rb") as doc:
+        resp = httpx.post(
+            url,
+            data={
+                "chat_id": chat_id,
+                "caption": caption[:1024],
+            },
+            files={"document": (file_path.name, doc, "text/markdown")},
+            timeout=120.0,
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"Telegram API error: {data}")
+    logger.info("Sent document %s to chat %s", file_path.name, chat_id)
+    return data

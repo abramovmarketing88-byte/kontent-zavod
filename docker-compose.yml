@@ -14,3 +14,5 @@ services:
       - ./inbox:/app/inbox
       - ./brand:/app/brand
       - ./config:/app/config
+      - ./reports:/app/reports
+      - ./logs:/app/logs
