@@ -9,6 +9,12 @@ from src.rewrite.fallback_llm import _parse_remake
 from src.voice.elevenlabs import _alignment_to_words
 
 
+def test_run_once_trigger_file() -> None:
+    p = Path(__file__).resolve().parents[1] / "triggers" / "run-once.id"
+    assert p.is_file()
+    assert p.read_text(encoding="utf-8").strip()
+
+
 def test_captions() -> None:
     words = [
         WordTiming(word="Привет", start=0.0, end=0.5),

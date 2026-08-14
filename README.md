@@ -2,6 +2,23 @@
 
 Автоматический контент-завод для faceless Reels (Instagram).
 
+## Разовый заказ (не ждать 09:00)
+
+Сервер сам **не** смотрит лейблы GitHub напрямую. Каждые 15 минут он делает `git pull` `main`. Если в `triggers/run-once.id` новый id — сразу собирает один ролик и шлёт его в Telegram (тот же бот, что в `mcp.json`).
+
+После мержа этого механизма в `main`:
+
+1. **GitHub → Actions → "Run once now" → Run workflow**
+2. Или лейбл **`run-now`** на Issue
+3. Или комментарий **`/run-now`** в Issue
+4. Или по SSH, сразу, без ожидания pull:
+
+```bash
+bash /opt/kontent-zavod/scripts/run_once.sh
+```
+
+В личку сначала придёт «⏳ Разовый заказ…», потом разбор залетевшего Reels и готовый mp4.
+
 ## Быстрый старт
 
 1. Скопируй `.env.example` → `.env` и заполни ключи API

@@ -26,7 +26,7 @@ from src.jobs import (
     write_transcript,
 )
 from src.models import JobStatus, today_output_dir
-from src.publish.telegram import notify_owner, send_source_breakdown
+from src.publish.telegram import notify_owner, send_message, send_source_breakdown
 from src.renderers.factory import get_renderer
 from src.rewrite.cursor_rewriter import CursorRewriter
 from src.visuals.pexels import PexelsClient
@@ -203,6 +203,18 @@ def _start_scheduler(settings: Settings, pipeline: Pipeline) -> None:
         logger.info("Scheduler stopped")
 
 
+def _notify_run_start(settings: Settings) -> None:
+    if not settings.telegram_notify:
+        logger.info("TELEGRAM_NOTIFY is off — skip start ping")
+        return
+    send_message(
+        settings.telegram_bot_token,
+        settings.telegram_owner_chat_id,
+        "⏳ Разовый заказ: ищу залетевшие Reels, делаю разбор и собираю новый ролик. Пришлю сюда.",
+    )
+    logger.info("Sent run-once start ping to Telegram")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Kontent Zavod — faceless Reels factory")
     parser.add_argument(
@@ -210,11 +222,19 @@ def main() -> None:
         action="store_true",
         help="Run pipeline once and exit",
     )
+    parser.add_argument(
+        "--notify-start",
+        action="store_true",
+        help="Ping Telegram before a one-off run",
+    )
     args = parser.parse_args()
 
     settings = load_settings()
     ensure_dirs(settings)
     pipeline = Pipeline(settings)
+
+    if args.notify_start:
+        _notify_run_start(settings)
 
     if args.once:
         count = pipeline.run_once()
