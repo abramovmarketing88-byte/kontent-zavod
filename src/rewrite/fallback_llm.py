@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 REMAKE_SCHEMA = """
 {
   "hook": "string — 1-2 sec hook",
-  "script": "string — full voiceover 20-40 sec, conversational RU",
+  "script": "string — full voiceover 30-40 sec (~75-100 words), conversational RU",
   "shots": [{"keywords": ["stock", "search", "terms"], "duration_sec": 3.0}],
   "caption": "string — Instagram caption",
   "hashtags": ["#tag1", "#tag2"],
@@ -48,15 +48,19 @@ class FallbackRewriter:
         brand_prompt: str,
         meta: SourceMeta,
         transcript: TranscriptResult,
+        duration_hint: str | None = None,
     ) -> RemakeSpec:
         if not self.client:
             raise RuntimeError(
                 "OPENROUTER_API_KEY or OPENAI_API_KEY not set — cannot use fallback rewriter"
             )
 
+        hint_block = f"\n\n## Дополнительное требование\n{duration_hint}\n" if duration_hint else ""
+
         user_prompt = f"""
 Прочитай бренд-бриф и исходный ролик. Создай ОРИГИНАЛЬНЫЙ сценарий для faceless Reels.
 Не копируй чужие фразы — возьми только тему, хук и структуру.
+Длина озвучки: строго 30–40 секунд (~75–100 слов).
 
 ## Бренд-бриф
 {brand_prompt}
@@ -69,7 +73,7 @@ class FallbackRewriter:
 
 ## Транскрипт исходника
 {transcript.text or "(пусто — придумай по названию)"}
-
+{hint_block}
 Верни ТОЛЬКО валидный JSON без markdown по схеме:
 {REMAKE_SCHEMA}
 """
@@ -87,6 +91,44 @@ class FallbackRewriter:
         )
         raw = response.choices[0].message.content or ""
         return _parse_remake(raw)
+
+    def analyze_structure(
+        self,
+        meta: SourceMeta,
+        transcript: TranscriptResult,
+    ) -> str:
+        if not self.client or not transcript.text.strip():
+            return ""
+
+        prompt = f"""
+Проанализируй залетевший короткий ролик. Верни 5–7 строк на русском:
+- Хук (что цепляет в первые секунды)
+- Проблема аудитории
+- Решение / ценность
+- CTA
+- Почему мог залететь
+
+Исходник: {meta.title} ({meta.channel})
+Просмотры: {meta.views}
+Транскрипт:
+{transcript.text}
+"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.settings.llm_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Ты аналитик вирального контента. Отвечай кратко списком.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.4,
+            )
+            return (response.choices[0].message.content or "").strip()
+        except Exception as exc:
+            logger.warning("Structure analysis failed: %s", exc)
+            return ""
 
 
 def _parse_remake(raw: str) -> RemakeSpec:

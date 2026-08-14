@@ -19,3 +19,14 @@ top_n_per_query: 5
 
 # Максимальная длительность Short (сек)
 max_duration_sec: 60
+
+instagram:
+  hashtags:
+    - "reelsмаркетинг"
+    - "smmсоветы"
+    - "продвижениеinstagram"
+    - "контентзавод"
+  accounts: []
+  min_views: 50000
+  max_age_days: 14
+  max_duration_sec: 60

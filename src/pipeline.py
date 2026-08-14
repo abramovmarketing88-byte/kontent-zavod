@@ -26,7 +26,7 @@ from src.jobs import (
     write_transcript,
 )
 from src.models import JobStatus, today_output_dir
-from src.publish.telegram import notify_owner
+from src.publish.telegram import notify_owner, send_source_breakdown
 from src.renderers.factory import get_renderer
 from src.rewrite.cursor_rewriter import CursorRewriter
 from src.visuals.pexels import PexelsClient
@@ -83,11 +83,24 @@ class Pipeline:
         write_transcript(path, transcript)
         self.db.update_status(meta.source_id, JobStatus.ANALYZED)
 
+        if self.settings.telegram_notify:
+            structure = self.rewriter.fallback.analyze_structure(meta, transcript)
+            send_source_breakdown(
+                self.settings.telegram_bot_token,
+                self.settings.telegram_owner_chat_id,
+                meta,
+                transcript,
+                structure,
+            )
+
         remake = self.rewriter.rewrite(path, meta, transcript)
         write_remake(path, remake)
         self.db.update_status(meta.source_id, JobStatus.REWRITTEN)
 
         voice_result = self.voice.synthesize(path, remake)
+        voice_result = self._ensure_target_duration(
+            path, meta, transcript, remake, voice_result
+        )
         self.db.update_status(meta.source_id, JobStatus.VOICED)
 
         shot_clips: list[Path] = []
@@ -118,6 +131,38 @@ class Pipeline:
             )
             self.db.update_status(meta.source_id, JobStatus.PUBLISHED)
             logger.info("Sent to Telegram DM: %s", self.settings.telegram_owner_chat_id)
+
+    def _ensure_target_duration(self, path, meta, transcript, remake, voice_result):
+        min_sec = self.settings.target_duration_min
+        max_sec = self.settings.target_duration_max
+        duration = voice_result.duration_sec
+
+        if min_sec <= duration <= max_sec:
+            return voice_result
+
+        if duration < min_sec:
+            hint = (
+                f"Озвучка получилась {duration:.1f} сек — слишком коротко. "
+                f"Перепиши script так, чтобы итоговая озвучка была {min_sec:.0f}–{max_sec:.0f} сек "
+                f"(~75–100 слов). Добавь конкретики и один пример."
+            )
+        else:
+            hint = (
+                f"Озвучка получилась {duration:.1f} сек — слишком длинно. "
+                f"Сократи script до {min_sec:.0f}–{max_sec:.0f} сек (~75–100 слов), "
+                f"убери воду, оставь хук, проблему, решение и CTA."
+            )
+
+        logger.warning(
+            "Voice duration %.1fs outside %.0f–%.0fs — retry rewrite",
+            duration,
+            min_sec,
+            max_sec,
+        )
+        remake = self.rewriter.rewrite(path, meta, transcript, duration_hint=hint)
+        write_remake(path, remake)
+        self.db.update_status(meta.source_id, JobStatus.REWRITTEN)
+        return self.voice.synthesize(path, remake)
 
 
 def _parse_daily_at(value: str) -> tuple[int, int]:

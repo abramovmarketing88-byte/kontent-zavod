@@ -35,13 +35,16 @@ class CursorRewriter:
         job_path: Path,
         meta: SourceMeta,
         transcript: TranscriptResult,
+        duration_hint: str | None = None,
     ) -> RemakeSpec:
         remake_path = job_path / "remake.json"
         brand_prompt = (self.settings.brand_dir / "prompt.md").read_text(
             encoding="utf-8"
         )
 
-        prompt = self._build_prompt(brand_prompt, meta, transcript, remake_path)
+        prompt = self._build_prompt(
+            brand_prompt, meta, transcript, remake_path, duration_hint
+        )
 
         try:
             remake = self._cursor_prompt(prompt, remake_path)
@@ -53,7 +56,9 @@ class CursorRewriter:
                 meta.source_id,
                 exc,
             )
-            remake = self.fallback.rewrite(brand_prompt, meta, transcript)
+            remake = self.fallback.rewrite(
+                brand_prompt, meta, transcript, duration_hint=duration_hint
+            )
             remake_path.write_text(remake.model_dump_json(indent=2), encoding="utf-8")
             return remake
 
@@ -63,6 +68,7 @@ class CursorRewriter:
         meta: SourceMeta,
         transcript: TranscriptResult,
         remake_path: Path,
+        duration_hint: str | None = None,
     ) -> str:
         source_json = json.dumps(
             {
@@ -79,6 +85,7 @@ class CursorRewriter:
 Прочитай brand/prompt.md и данные исходника ниже.
 Создай ОРИГИНАЛЬНЫЙ сценарий faceless Reels на русском (бизнес/маркетинг).
 Не копируй чужой текст дословно — только тему, хук и структуру.
+Длина озвучки: строго 30–40 секунд (~75–100 слов).
 
 Запиши результат в файл: {remake_path.as_posix()}
 
@@ -90,7 +97,7 @@ class CursorRewriter:
 
 ## source.json
 {source_json}
-
+{f"## Дополнительное требование\n{duration_hint}\n" if duration_hint else ""}
 Важно: файл remake.json должен быть валидным JSON без комментариев.
 """
 

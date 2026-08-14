@@ -20,6 +20,15 @@ class NicheConfig:
 
 
 @dataclass
+class InstagramNicheConfig:
+    hashtags: list[str] = field(default_factory=list)
+    accounts: list[str] = field(default_factory=list)
+    min_views: int = 50_000
+    max_age_days: int = 14
+    max_duration_sec: int = 60
+
+
+@dataclass
 class Settings:
     root: Path
     data_dir: Path
@@ -53,8 +62,12 @@ class Settings:
     daily_at: str
     schedule_tz: str
     whisper_model: str
+    transcribe_backend: str
+    target_duration_min: float
+    target_duration_max: float
 
     niche: NicheConfig
+    instagram: InstagramNicheConfig
 
 
 def _load_llm_settings() -> tuple[str, str | None, str]:
@@ -89,6 +102,15 @@ def load_settings() -> Settings:
         max_duration_sec=int(niche_data.get("max_duration_sec", 60)),
     )
 
+    ig_data = niche_data.get("instagram") or {}
+    instagram = InstagramNicheConfig(
+        hashtags=ig_data.get("hashtags", []),
+        accounts=ig_data.get("accounts", []),
+        min_views=int(ig_data.get("min_views", niche.min_views)),
+        max_age_days=int(ig_data.get("max_age_days", niche.max_age_days)),
+        max_duration_sec=int(ig_data.get("max_duration_sec", niche.max_duration_sec)),
+    )
+
     llm_api_key, llm_base_url, llm_model = _load_llm_settings()
 
     return Settings(
@@ -121,7 +143,11 @@ def load_settings() -> Settings:
         daily_at=os.getenv("DAILY_AT", "09:00"),
         schedule_tz=os.getenv("SCHEDULE_TZ", "Europe/Moscow"),
         whisper_model=os.getenv("WHISPER_MODEL", "base"),
+        transcribe_backend=os.getenv("TRANSCRIBE_BACKEND", "faster_whisper"),
+        target_duration_min=float(os.getenv("TARGET_DURATION_MIN", "30")),
+        target_duration_max=float(os.getenv("TARGET_DURATION_MAX", "40")),
         niche=niche,
+        instagram=instagram,
     )
 
 

@@ -44,6 +44,7 @@ class SourceMeta(BaseModel):
     duration_sec: float = 0.0
     score: float = 0.0
     query: str = ""
+    platform: str = "youtube"
 
 
 class TranscriptResult(BaseModel):

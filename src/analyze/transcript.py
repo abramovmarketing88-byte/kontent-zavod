@@ -1,4 +1,4 @@
-"""Download audio and transcribe with faster-whisper."""
+"""Download audio and transcribe."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ import subprocess
 from pathlib import Path
 
 import yt_dlp
-from faster_whisper import WhisperModel
 
-from src.ffmpeg_bin import get_ffmpeg
+from src.analyze.transcriber import transcribe_audio
 from src.config import Settings
+from src.ffmpeg_bin import get_ffmpeg
 from src.models import SourceMeta, TranscriptResult
 
 logger = logging.getLogger(__name__)
@@ -19,49 +19,18 @@ logger = logging.getLogger(__name__)
 class Analyzer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self._model: WhisperModel | None = None
-
-    @property
-    def model(self) -> WhisperModel:
-        if self._model is None:
-            self._model = WhisperModel(
-                self.settings.whisper_model,
-                device="cpu",
-                compute_type="int8",
-            )
-        return self._model
 
     def analyze(self, job_path: Path, meta: SourceMeta) -> TranscriptResult:
         audio_path = job_path / "source_audio.wav"
         if not audio_path.exists():
             self._download_audio(meta.url, audio_path)
 
-        segments_iter, info = self.model.transcribe(
-            str(audio_path),
-            language="ru",
-            vad_filter=True,
-        )
-        segments = []
-        parts: list[str] = []
-        for seg in segments_iter:
-            segments.append(
-                {
-                    "start": seg.start,
-                    "end": seg.end,
-                    "text": seg.text.strip(),
-                }
-            )
-            parts.append(seg.text.strip())
-
-        transcript = TranscriptResult(
-            text=" ".join(parts).strip(),
-            language=info.language or "ru",
-            segments=segments,
-        )
+        transcript = transcribe_audio(self.settings, audio_path)
         logger.info(
-            "Transcribed %s (%d chars)",
+            "Transcribed %s (%d chars, backend=%s)",
             meta.source_id,
             len(transcript.text),
+            self.settings.transcribe_backend,
         )
         return transcript
 
@@ -75,8 +44,10 @@ class Analyzer:
             "no_warnings": True,
             "retries": 5,
             "fragment_retries": 5,
-            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         }
+        if "youtube.com" in url or "youtu.be" in url:
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "web"]}}
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 

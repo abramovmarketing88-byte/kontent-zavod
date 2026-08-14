@@ -80,6 +80,7 @@ class InboxDiscoverer:
                 source_id=video_id,
                 url=original_url or f"https://www.youtube.com/shorts/{video_id}",
                 title=f"Inbox video {video_id}",
+                platform="youtube",
             )
 
         params = {
@@ -104,6 +105,7 @@ class InboxDiscoverer:
                     views=int(stats.get("viewCount", 0)),
                     published_at=snippet.get("publishedAt", ""),
                     channel=snippet.get("channelTitle", ""),
+                    platform="youtube",
                 )
         except Exception as exc:
             logger.error("Failed to fetch inbox video %s: %s", video_id, exc)

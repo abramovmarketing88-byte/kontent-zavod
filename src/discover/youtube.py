@@ -102,6 +102,7 @@ class YouTubeDiscoverer:
                         duration_sec=duration,
                         score=_score(views, published),
                         query=query,
+                        platform="youtube",
                     )
                     candidates[vid] = meta
 

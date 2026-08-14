@@ -38,6 +38,7 @@ class Database:
                     views INTEGER DEFAULT 0,
                     published_at TEXT,
                     channel TEXT,
+                    platform TEXT DEFAULT 'youtube',
                     status TEXT NOT NULL DEFAULT 'discovered',
                     job_dir TEXT,
                     error TEXT,
@@ -46,6 +47,15 @@ class Database:
                 )
                 """
             )
+            self._ensure_column(conn, "sources", "platform", "TEXT DEFAULT 'youtube'")
+
+    def _ensure_column(
+        self, conn: sqlite3.Connection, table: str, column: str, definition: str
+    ) -> None:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        names = {row["name"] for row in rows}
+        if column not in names:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def should_skip_discovery(self, source_id: str) -> bool:
         """Skip if already rendered or currently in pipeline; retry on failed."""
@@ -72,15 +82,16 @@ class Database:
             conn.execute(
                 """
                 INSERT INTO sources (
-                    source_id, url, title, views, published_at, channel,
+                    source_id, url, title, views, published_at, channel, platform,
                     status, job_dir, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(source_id) DO UPDATE SET
                     url=excluded.url,
                     title=excluded.title,
                     views=excluded.views,
                     published_at=excluded.published_at,
                     channel=excluded.channel,
+                    platform=excluded.platform,
                     status=excluded.status,
                     job_dir=excluded.job_dir,
                     updated_at=excluded.updated_at
@@ -92,6 +103,7 @@ class Database:
                     meta.views,
                     meta.published_at,
                     meta.channel,
+                    meta.platform,
                     status.value,
                     job_dir,
                     now,
