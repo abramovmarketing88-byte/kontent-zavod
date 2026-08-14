@@ -1,0 +1,61 @@
+name: Run once now
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  bump-trigger:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && github.event.label.name == 'run-now') ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/run-now'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Ensure run-now label exists
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'run-now',
+                color: 'FF8800',
+                description: 'Разовый запуск: найти Reels и прислать ролик в Telegram',
+              });
+            } catch (err) {
+              if (err.status !== 422) throw err;
+            }
+
+      - name: Bump run-once trigger
+        run: |
+          mkdir -p triggers
+          date -u +%Y-%m-%dT%H:%M:%SZ-$(openssl rand -hex 4) > triggers/run-once.id
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add triggers/run-once.id
+          git commit -m "chore: run-once $(tr -d '\n' < triggers/run-once.id)"
+          git push origin HEAD:main
+
+      - name: Comment on issue
+        if: github.event.issue.number
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '⏳ Разовый заказ принят. Сервер подтянет `main` (до 15 мин), найдёт залетевший Reels и пришлёт ролик в Telegram.',
+            });
