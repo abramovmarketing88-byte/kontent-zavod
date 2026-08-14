@@ -14,8 +14,8 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from src.analyze.transcript import Analyzer
 from src.config import Settings, ensure_dirs, load_settings
+from src.util import slugify
 from src.db import Database
 from src.discover.service import discover_sources
 from src.jobs import (
@@ -43,11 +43,19 @@ class Pipeline:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.db = Database(settings.db_path)
-        self.analyzer = Analyzer(settings)
+        self._analyzer = None
         self.rewriter = CursorRewriter(settings)
         self.voice = ElevenLabsVoice(settings)
         self.pexels = PexelsClient(settings)
         self.renderer = get_renderer(settings)
+
+    @property
+    def analyzer(self):
+        if self._analyzer is None:
+            from src.analyze.transcript import Analyzer
+
+            self._analyzer = Analyzer(self.settings)
+        return self._analyzer
 
     def run_once(self) -> int:
         sources = discover_sources(self.settings, self.db)
@@ -91,7 +99,7 @@ class Pipeline:
 
         out_dir = Path(today_output_dir(str(self.settings.output_dir)))
         out_dir.mkdir(parents=True, exist_ok=True)
-        slug = _slugify(remake.title or meta.source_id)
+        slug = slugify(remake.title or meta.source_id)
         dest_video = out_dir / f"{slug}.mp4"
         shutil.copy2(final, dest_video)
         write_caption(out_dir, slug, remake.caption, remake.hashtags)
@@ -110,14 +118,6 @@ class Pipeline:
             )
             self.db.update_status(meta.source_id, JobStatus.PUBLISHED)
             logger.info("Sent to Telegram DM: %s", self.settings.telegram_owner_chat_id)
-
-
-def _slugify(text: str, max_len: int = 60) -> str:
-    import re
-
-    slug = re.sub(r"[^\w\s-]", "", text.lower(), flags=re.UNICODE)
-    slug = re.sub(r"[\s_-]+", "-", slug).strip("-")
-    return slug[:max_len] or "video"
 
 
 def _parse_daily_at(value: str) -> tuple[int, int]:

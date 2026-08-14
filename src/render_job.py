@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from src.config import ensure_dirs, load_settings
 from src.jobs import job_dir, read_remake, write_caption
 from src.models import RemakeSpec, today_output_dir
-from src.pipeline import _slugify
+from src.util import slugify
 from src.publish.telegram import notify_owner
 from src.renderers.factory import get_renderer
 from src.visuals.pexels import PexelsClient
@@ -59,7 +59,7 @@ def render_job(
 
     out_dir = Path(today_output_dir(str(settings.output_dir)))
     out_dir.mkdir(parents=True, exist_ok=True)
-    slug = _slugify(remake.title or job_id)
+    slug = slugify(remake.title or job_id)
     if output_suffix:
         slug = f"{slug}_{output_suffix}"
     dest = out_dir / f"{slug}.mp4"
