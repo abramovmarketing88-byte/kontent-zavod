@@ -154,21 +154,41 @@ class Pipeline:
         if report:
             report.stage("analyze", meta.source_id)
 
-        transcript = self.analyzer.analyze(path, meta)
-        write_transcript(path, transcript)
-        self.db.update_status(meta.source_id, JobStatus.ANALYZED)
+        if meta.platform == "topic":
+            # Freeform idea — no download / whisper
+            from src.discover.topic import topic_brief_path
+            from src.models import TranscriptResult
 
-        if self.settings.telegram_notify:
-            if report:
-                report.stage("breakdown", meta.source_id)
-            structure = self.rewriter.fallback.analyze_structure(meta, transcript)
-            send_source_breakdown(
-                self.settings.telegram_bot_token,
-                self.settings.telegram_owner_chat_id,
-                meta,
-                transcript,
-                structure,
+            brief_path = topic_brief_path(self.settings.inbox_dir, meta.source_id)
+            topic_text = (
+                brief_path.read_text(encoding="utf-8").strip()
+                if brief_path.exists()
+                else meta.title
             )
+            (path / "topic.txt").write_text(topic_text + "\n", encoding="utf-8")
+            transcript = TranscriptResult(text=topic_text, language="ru")
+            write_transcript(path, transcript)
+            self.db.update_status(meta.source_id, JobStatus.ANALYZED)
+            if self.settings.telegram_notify:
+                self._tg(
+                    f"🧠 Тема без исходника\n\n{meta.title}\n\n{topic_text[:1500]}"
+                )
+        else:
+            transcript = self.analyzer.analyze(path, meta)
+            write_transcript(path, transcript)
+            self.db.update_status(meta.source_id, JobStatus.ANALYZED)
+
+            if self.settings.telegram_notify:
+                if report:
+                    report.stage("breakdown", meta.source_id)
+                structure = self.rewriter.fallback.analyze_structure(meta, transcript)
+                send_source_breakdown(
+                    self.settings.telegram_bot_token,
+                    self.settings.telegram_owner_chat_id,
+                    meta,
+                    transcript,
+                    structure,
+                )
 
         if report:
             report.stage("rewrite", meta.source_id)

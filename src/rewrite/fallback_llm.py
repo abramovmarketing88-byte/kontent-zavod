@@ -57,7 +57,26 @@ class FallbackRewriter:
 
         hint_block = f"\n\n## Дополнительное требование\n{duration_hint}\n" if duration_hint else ""
 
-        user_prompt = f"""
+        if meta.platform == "topic":
+            user_prompt = f"""
+Прочитай бренд-бриф и ТЕМУ. Создай ОРИГИНАЛЬНЫЙ сценарий для faceless Reels с нуля.
+Это не ремейк чужого ролика — пиши сам по теме.
+Длина озвучки: строго 30–40 секунд (~75–100 слов).
+
+## Бренд-бриф
+{brand_prompt}
+
+## Тема
+{meta.title}
+
+## Развёрнутое ТЗ / идея
+{transcript.text or "(пусто)"}
+{hint_block}
+Верни ТОЛЬКО валидный JSON без markdown по схеме:
+{REMAKE_SCHEMA}
+"""
+        else:
+            user_prompt = f"""
 Прочитай бренд-бриф и исходный ролик. Создай ОРИГИНАЛЬНЫЙ сценарий для faceless Reels.
 Не копируй чужие фразы — возьми только тему, хук и структуру.
 Длина озвучки: строго 30–40 секунд (~75–100 слов).

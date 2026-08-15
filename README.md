@@ -40,6 +40,13 @@ tail -n 100 /opt/kontent-zavod/logs/pipeline.last.log
 bash /opt/kontent-zavod/scripts/smoke_e2e.sh 'https://www.youtube.com/shorts/XXXX'
 ```
 
+Тема наугад без исходного ролика — положи текст в `inbox/topic.txt` и закажи run-once:
+
+```bash
+echo 'Нейросети: раньше день работы, сейчас 5 минут' > /opt/kontent-zavod/inbox/topic.txt
+# или через git: файл inbox/topic.txt + новый triggers/run-once.id
+```
+
 При падении бот присылает **`last-run.md`** в Telegram.  
 Опционально сервер пушит тот же отчёт в ветку **`run-reports`** (нужен `GITHUB_TOKEN` или write deploy key) — тогда агент читает его прямо с GitHub.
 

@@ -76,11 +76,31 @@ class CursorRewriter:
                 "views": meta.views,
                 "channel": meta.channel,
                 "url": meta.url,
+                "platform": meta.platform,
                 "transcript": transcript.text,
             },
             ensure_ascii=False,
             indent=2,
         )
+        if meta.platform == "topic":
+            return f"""
+Прочитай brand/prompt.md и ТЕМУ ниже.
+Создай ОРИГИНАЛЬНЫЙ сценарий faceless Reels на русском с нуля (не ремейк).
+Длина озвучки: строго 30–40 секунд (~75–100 слов).
+
+Запиши результат в файл: {remake_path.as_posix()}
+
+Формат JSON (строго):
+{REMAKE_SCHEMA}
+
+## brand/prompt.md
+{brand_prompt}
+
+## Тема / ТЗ
+{source_json}
+{f"## Дополнительное требование\n{duration_hint}\n" if duration_hint else ""}
+Важно: файл remake.json должен быть валидным JSON без комментариев.
+"""
         return f"""
 Прочитай brand/prompt.md и данные исходника ниже.
 Создай ОРИГИНАЛЬНЫЙ сценарий faceless Reels на русском (бизнес/маркетинг).

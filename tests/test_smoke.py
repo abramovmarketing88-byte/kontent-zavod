@@ -222,6 +222,60 @@ def test_pexels_placeholder_without_key(tmp_path: Path) -> None:
     assert paths[0].stat().st_size > 1000
 
 
+def test_topic_discoverer_queues_brief(tmp_path: Path) -> None:
+    from src.config import InstagramNicheConfig, NicheConfig, Settings
+    from src.db import Database
+    from src.discover.topic import TopicDiscoverer, topic_brief_path
+
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "topic.txt").write_text(
+        "Нейросети экономят время\nРаньше день, сейчас 5 минут\n",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        root=tmp_path,
+        data_dir=tmp_path / "data",
+        jobs_dir=tmp_path / "jobs",
+        output_dir=tmp_path / "output",
+        inbox_dir=inbox,
+        brand_dir=tmp_path / "brand",
+        config_dir=tmp_path / "config",
+        db_path=tmp_path / "data" / "factory.db",
+        cursor_api_key="",
+        elevenlabs_api_key="",
+        elevenlabs_voice_id="",
+        youtube_api_key="",
+        pexels_api_key="",
+        llm_api_key="",
+        llm_base_url=None,
+        llm_model="gpt-4o-mini",
+        heygen_api_key="",
+        heygen_avatar_id="",
+        heygen_intro_sec=8.0,
+        renderer="faceless",
+        telegram_bot_token="",
+        telegram_owner_chat_id="",
+        telegram_notify=False,
+        max_videos_per_run=1,
+        schedule_hours=6,
+        daily_at="09:00",
+        schedule_tz="Europe/Moscow",
+        whisper_model="base",
+        transcribe_backend="faster_whisper",
+        target_duration_min=30.0,
+        target_duration_max=40.0,
+        niche=NicheConfig(),
+        instagram=InstagramNicheConfig(),
+    )
+    db = Database(settings.db_path)
+    found = TopicDiscoverer(settings, db).discover()
+    assert len(found) == 1
+    assert found[0].platform == "topic"
+    assert topic_brief_path(inbox, found[0].source_id).exists()
+    assert (inbox / "topic.txt").read_text(encoding="utf-8").strip() == ""
+
+
 def test_diagnose_and_entrypoint_scripts_exist() -> None:
     root = Path(__file__).resolve().parents[1]
     assert (root / "scripts" / "diagnose.sh").is_file()
