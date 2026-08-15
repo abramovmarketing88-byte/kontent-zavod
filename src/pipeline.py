@@ -241,6 +241,46 @@ class Pipeline:
         if self.settings.youtube_upload:
             self._publish_youtube(dest_video, remake, report)
 
+        if self.settings.telegram_story_upload:
+            self._publish_telegram_story(dest_video, remake, report)
+
+    def _publish_telegram_story(self, dest_video, remake, report) -> None:
+        from src.publish.telegram_story import (
+            TelegramStoryError,
+            discover_business_connection_id,
+            prepare_story_video,
+            post_story_video,
+        )
+
+        if report:
+            report.stage("telegram_story", str(dest_video))
+        try:
+            conn = self.settings.telegram_business_connection_id.strip()
+            if not conn:
+                conn = discover_business_connection_id(self.settings.telegram_bot_token) or ""
+            if not conn:
+                cache = self.settings.data_dir / "business_connection.id"
+                if cache.exists():
+                    conn = cache.read_text(encoding="utf-8").strip()
+            prepared = self.settings.data_dir / f"story_{dest_video.stem}.mp4"
+            prepare_story_video(dest_video, prepared)
+            story = post_story_video(
+                self.settings.telegram_bot_token,
+                conn,
+                prepared,
+                caption=(remake.caption or remake.title or "")[:500],
+                active_period=self.settings.telegram_story_active_period,
+            )
+            self._tg(
+                f"✅ Telegram Story\nstory_id={story.get('id')}\n"
+                f"chat={(story.get('chat') or {}).get('id')}"
+            )
+        except TelegramStoryError as exc:
+            logger.exception("Telegram story failed: %s", exc)
+            if report:
+                report.errors.append(f"telegram_story: {exc}")
+            self._tg(f"❌ Telegram Story failed\n{exc}")
+
     def _publish_youtube(self, dest_video, remake, report) -> None:
         from src.publish.youtube import YouTubeUploadError, YouTubeUploader
 

@@ -193,6 +193,8 @@ class RunReport:
             "has_heygen_avatar": bool(s.heygen_avatar_id),
             "has_telegram_token": bool(s.telegram_bot_token),
             "has_telegram_chat": bool(s.telegram_owner_chat_id),
+            "telegram_story_upload": bool(s.telegram_story_upload),
+            "has_telegram_business_connection": bool(s.telegram_business_connection_id),
             "llm_model": s.llm_model,
             "llm_base_url": s.llm_base_url,
             "niche_queries": list(s.niche.search_queries),

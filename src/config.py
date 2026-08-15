@@ -78,6 +78,11 @@ class Settings:
     youtube_privacy: str = "public"
     youtube_category_id: str = "22"
 
+    # Telegram Business Stories (postStory)
+    telegram_business_connection_id: str = ""
+    telegram_story_upload: bool = False
+    telegram_story_active_period: int = 86400
+
 
 def _load_llm_settings() -> tuple[str, str | None, str]:
     """Resolve fallback LLM: OpenRouter or OpenAI-compatible API."""
@@ -143,6 +148,14 @@ def load_settings() -> Settings:
         in ("1", "true", "yes"),
         youtube_privacy=os.getenv("YOUTUBE_PRIVACY", "public"),
         youtube_category_id=os.getenv("YOUTUBE_CATEGORY_ID", "22"),
+        telegram_business_connection_id=os.getenv(
+            "TELEGRAM_BUSINESS_CONNECTION_ID", ""
+        ).strip(),
+        telegram_story_upload=os.getenv("TELEGRAM_STORY_UPLOAD", "false").lower()
+        in ("1", "true", "yes"),
+        telegram_story_active_period=int(
+            os.getenv("TELEGRAM_STORY_ACTIVE_PERIOD", "86400")
+        ),
         pexels_api_key=os.getenv("PEXELS_API_KEY", ""),
         llm_api_key=llm_api_key,
         llm_base_url=llm_base_url,

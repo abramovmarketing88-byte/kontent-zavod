@@ -178,6 +178,27 @@ sudo systemctl enable --now kontent-zavod
 journalctl -u kontent-zavod -f
 ```
 
+## Telegram Business Stories
+
+Бот-ассистент на Business может постить сторис через `postStory` (нужно право `can_manage_stories`).
+
+```env
+TELEGRAM_STORY_UPLOAD=true
+# optional if auto-discover from getUpdates fails:
+# TELEGRAM_BUSINESS_CONNECTION_ID=...
+TELEGRAM_STORY_ACTIVE_PERIOD=86400
+```
+
+Видео перекодируется в **720×1280 H.265** (требование TG).  
+Разовая выгрузка последнего ролика:
+
+```bash
+printf '%s\n' "story-$(date -u +%Y%m%dT%H%M%SZ)" > triggers/telegram-story-once.id
+bash scripts/auto_update.sh
+# или
+docker compose run --rm --no-deps worker python -m src.publish.telegram_story
+```
+
 ## YouTube Shorts (выгрузка)
 
 `YOUTUBE_API_KEY` — только **поиск**. Чтобы **залить** Short, нужен OAuth:

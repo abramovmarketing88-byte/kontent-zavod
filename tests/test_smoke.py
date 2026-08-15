@@ -290,6 +290,45 @@ def test_pexels_placeholder_without_key(tmp_path: Path) -> None:
     assert paths[0].stat().st_size > 1000
 
 
+def test_telegram_story_prepare_720x1280(tmp_path: Path) -> None:
+    import subprocess
+
+    from src.assemble.ffmpeg import probe_size
+    from src.publish.telegram_story import prepare_story_video
+
+    src = tmp_path / "src.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=1080x1920:d=2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(src),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    dest = tmp_path / "story.mp4"
+    prepare_story_video(src, dest, max_duration=2.0)
+    assert dest.exists() and dest.stat().st_size > 1000
+    assert probe_size(dest) == (720, 1280)
+
+
+def test_telegram_story_trigger_exists() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert (root / "scripts" / "check_telegram_story.sh").is_file()
+    assert (root / "triggers" / "telegram-story-once.id").is_file()
+    from src.publish import telegram_story as ts
+
+    assert 86400 in ts.ACTIVE_PERIODS
+
+
 def test_youtube_shorts_markers_and_latest(tmp_path: Path) -> None:
     from src.publish.youtube import ensure_shorts_markers, find_latest_output_video
 
