@@ -53,6 +53,10 @@ class HeyGenClient:
             "avatar_id": avatar_id,
             "audio_asset_id": audio_asset_id,
             "aspect_ratio": aspect_ratio,
+            "dimension": {
+                "width": 1080,
+                "height": 1920,
+            },
             "resolution": resolution,
         }
         with httpx.Client(timeout=60.0) as client:

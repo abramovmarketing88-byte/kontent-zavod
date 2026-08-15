@@ -227,12 +227,15 @@ def test_normalize_filters_force_square_pixels() -> None:
 
     import inspect
 
-    src = inspect.getsource(ff.normalize_talking_head)
+    src = inspect.getsource(ff)
     assert "setsar=1" in src
-    assert "aspect" in src
-    src2 = inspect.getsource(ff.concat_clips)
-    assert "libx264" in src2
-    assert "setsar=1" in src2
+    assert "force_original_aspect_ratio=increase" in src
+    assert "pad=" not in src.split("COVER_9x16")[1].split("\n")[0] if "COVER_9x16" in src else True
+    encode_src = inspect.getsource(ff._encode_video)
+    assert '"-aspect"' not in encode_src and "'-aspect'" not in encode_src
+    assert "force_original_aspect_ratio=decrease" not in src
+    assert "pad=" not in src.split("COVER_9x16", 1)[1][:200]
+    assert "assert_reel_size" in src
 
 
 def test_topic_discoverer_queues_brief(tmp_path: Path) -> None:

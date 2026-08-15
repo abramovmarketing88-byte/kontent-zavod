@@ -105,6 +105,9 @@ def send_video(
     chat_id: str,
     video_path: Path,
     caption: str,
+    *,
+    width: int = 1080,
+    height: int = 1920,
 ) -> dict:
     if not bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
@@ -121,6 +124,8 @@ def send_video(
                 "chat_id": chat_id,
                 "caption": caption[:1024],
                 "supports_streaming": "true",
+                "width": str(width),
+                "height": str(height),
             },
             files={"video": (video_path.name, video_file, "video/mp4")},
             timeout=300.0,
@@ -129,7 +134,7 @@ def send_video(
     data = resp.json()
     if not data.get("ok"):
         raise RuntimeError(f"Telegram API error: {data}")
-    logger.info("Sent video to chat %s", chat_id)
+    logger.info("Sent video to chat %s (%dx%d)", chat_id, width, height)
     return data
 
 
