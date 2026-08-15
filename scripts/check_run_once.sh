@@ -34,6 +34,7 @@ echo "$(date -Is) run-once start id=$NEW_ID" >> logs/run-once.log
 
 if /opt/kontent-zavod/scripts/run_once.sh; then
   echo "$(date -Is) run-once done id=$NEW_ID" >> logs/run-once.log
+  /opt/kontent-zavod/scripts/diagnose.sh >> logs/diagnose.log 2>&1 || true
 else
   echo "$(date -Is) run-once FAILED id=$NEW_ID" >> logs/run-once.log
   /opt/kontent-zavod/scripts/diagnose.sh >> logs/diagnose.log 2>&1 || true

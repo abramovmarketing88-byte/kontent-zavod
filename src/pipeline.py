@@ -142,6 +142,7 @@ class Pipeline:
         if report:
             report.stage("done", f"processed={processed}")
             report.complete(processed)
+            self._send_report_file(f"✅ Прогон ок — processed={processed}. last-run.md")
         return processed
 
     def _process_one(self, meta) -> None:
