@@ -222,6 +222,19 @@ def test_pexels_placeholder_without_key(tmp_path: Path) -> None:
     assert paths[0].stat().st_size > 1000
 
 
+def test_normalize_filters_force_square_pixels() -> None:
+    from src.assemble import ffmpeg as ff
+
+    import inspect
+
+    src = inspect.getsource(ff.normalize_talking_head)
+    assert "setsar=1" in src
+    assert "aspect" in src
+    src2 = inspect.getsource(ff.concat_clips)
+    assert "libx264" in src2
+    assert "setsar=1" in src2
+
+
 def test_topic_discoverer_queues_brief(tmp_path: Path) -> None:
     from src.config import InstagramNicheConfig, NicheConfig, Settings
     from src.db import Database

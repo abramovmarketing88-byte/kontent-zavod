@@ -14,7 +14,6 @@ from src.assemble.ffmpeg import (
     normalize_clip,
     normalize_talking_head,
     probe_duration,
-    strip_audio,
 )
 from src.config import Settings
 from src.heygen.client import HeyGenClient, HeyGenError
@@ -75,9 +74,9 @@ class HybridRenderer:
             (job_path / PENDING_FILE).unlink(missing_ok=True)
 
         heygen_video = work / "heygen_intro.mp4"
-        strip_audio(heygen_raw, heygen_video)
-        normalize_talking_head(heygen_video, work / "heygen_norm.mp4")
-        heygen_norm = work / "heygen_norm.mp4"
+        # Re-encode (not stream-copy) so anamorphic SAR from HeyGen cannot leak through
+        normalize_talking_head(heygen_raw, heygen_video)
+        heygen_norm = heygen_video
         intro_duration = probe_duration(heygen_norm)
 
         broll_duration = max(total_duration - intro_duration, 3.0)

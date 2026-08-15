@@ -54,10 +54,14 @@ def strip_audio(src: Path, dest: Path) -> None:
 
 
 def normalize_talking_head(src: Path, dest: Path) -> None:
-    """Scale/crop HeyGen output to 9:16 without zoom pan."""
+    """Scale/crop HeyGen output to true 9:16 with square pixels (no squash)."""
+    # setsar=1 is mandatory: HeyGen often ships non-1 SAR which Telegram/players
+    # then display as a flattened talking head with letterbox bars.
     vf = (
-        f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-        f"crop={WIDTH}:{HEIGHT},fps={FPS}"
+        f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase:force_divisible_by=2,"
+        f"crop={WIDTH}:{HEIGHT},"
+        f"setsar=1,"
+        f"fps={FPS}"
     )
     cmd = [
         get_ffmpeg(),
@@ -73,19 +77,27 @@ def normalize_talking_head(src: Path, dest: Path) -> None:
         "fast",
         "-pix_fmt",
         "yuv420p",
+        "-aspect",
+        "9:16",
         str(dest),
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
-    logger.debug("Normalized talking head -> %s", dest.name)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"normalize_talking_head failed: {result.stderr[-400:]}")
+    logger.info("Normalized talking head -> %s", dest.name)
 
 
 def normalize_clip(src: Path, dest: Path, duration: float) -> None:
-    """Crop/scale to 9:16 and trim to duration with slight zoom."""
+    """Crop/scale to 9:16 (square pixels) and trim to duration with slight zoom."""
+    # Avoid naked zoompan on anamorphic inputs — normalize geometry first.
     vf = (
-        f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+        f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase:force_divisible_by=2,"
         f"crop={WIDTH}:{HEIGHT},"
-        f"zoompan=z='min(zoom+0.0008,1.08)':d=1:x='iw/2-(iw/zoom/2)':"
-        f"y='ih/2-(ih/zoom/2)':s={WIDTH}x{HEIGHT}:fps={FPS}"
+        f"setsar=1,"
+        f"zoompan=z='min(1.0+0.0008*on,1.08)':d=1:"
+        f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+        f"s={WIDTH}x{HEIGHT}:fps={FPS},"
+        f"setsar=1"
     )
     cmd = [
         get_ffmpeg(),
@@ -105,13 +117,25 @@ def normalize_clip(src: Path, dest: Path, duration: float) -> None:
         "fast",
         "-pix_fmt",
         "yuv420p",
+        "-aspect",
+        "9:16",
         str(dest),
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
-    logger.debug("Normalized clip %s -> %s (%.1fs)", src.name, dest.name, duration)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        # Fallback without zoompan if filter graph rejects the chain
+        logger.warning("zoompan normalize failed, plain scale/crop: %s", result.stderr[-200:])
+        vf_plain = (
+            f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase:force_divisible_by=2,"
+            f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS}"
+        )
+        cmd[cmd.index("-vf") + 1] = vf_plain
+        subprocess.run(cmd, check=True, capture_output=True)
+    logger.info("Normalized clip %s -> %s (%.1fs)", src.name, dest.name, duration)
 
 
 def concat_clips(clips: list[Path], output: Path) -> None:
+    """Concat clips with re-encode so mismatched SAR/timebase cannot squash the reel."""
     list_file = output.with_suffix(".txt")
     list_file.write_text(
         "\n".join(f"file '{c.resolve().as_posix()}'" for c in clips),
@@ -126,12 +150,26 @@ def concat_clips(clips: list[Path], output: Path) -> None:
         "0",
         "-i",
         str(list_file),
-        "-c",
-        "copy",
+        "-vf",
+        f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,"
+        f"pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
+        f"setsar=1,fps={FPS}",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-pix_fmt",
+        "yuv420p",
+        "-aspect",
+        "9:16",
+        "-an",
         str(output),
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True, text=True)
     list_file.unlink(missing_ok=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"concat_clips failed: {result.stderr[-400:]}")
+    logger.info("Concatenated %d clips -> %s", len(clips), output.name)
 
 
 def mux_final(
@@ -141,7 +179,11 @@ def mux_final(
     output: Path,
 ) -> None:
     sub_path = subtitles.resolve().as_posix().replace("\\", "/").replace(":", "\\:")
-    vf_sub = f"subtitles='{sub_path}'"
+    vf_sub = (
+        f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,"
+        f"pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
+        f"subtitles='{sub_path}'"
+    )
     cmd_with_subs = [
         get_ffmpeg(),
         "-y",
@@ -162,6 +204,8 @@ def mux_final(
         "-shortest",
         "-pix_fmt",
         "yuv420p",
+        "-aspect",
+        "9:16",
         str(output),
     ]
     result = subprocess.run(cmd_with_subs, capture_output=True, text=True)
@@ -177,13 +221,22 @@ def mux_final(
         str(video),
         "-i",
         str(audio),
+        "-vf",
+        f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,"
+        f"pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1",
         "-c:v",
-        "copy",
+        "libx264",
+        "-preset",
+        "fast",
         "-c:a",
         "aac",
         "-b:a",
         "192k",
         "-shortest",
+        "-pix_fmt",
+        "yuv420p",
+        "-aspect",
+        "9:16",
         str(output),
     ]
     subprocess.run(cmd_plain, check=True, capture_output=True)
