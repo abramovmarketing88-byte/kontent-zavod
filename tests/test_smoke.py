@@ -150,12 +150,15 @@ def test_db_reclaim_and_max_fails(tmp_path: Path) -> None:
         conn.commit()
     assert db.reclaim_stale() == 1
     assert db.should_skip_discovery("abc") is False  # failed with 0 fails → retry
+    retries = db.list_retryable_failed(limit=5)
+    assert any(r.source_id == "abc" for r in retries)
 
     db.update_status("abc", JobStatus.FAILED, "boom")
     db.update_status("abc", JobStatus.FAILED, "boom")
     db.update_status("abc", JobStatus.FAILED, "boom")
     db.max_fails = 3
     assert db.should_skip_discovery("abc") is True
+    assert all(r.source_id != "abc" for r in db.list_retryable_failed())
 
 
 def test_edge_tts_without_elevenlabs_key() -> None:

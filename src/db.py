@@ -130,6 +130,42 @@ class Database:
             ).fetchone()
             return row is not None
 
+    def list_retryable_failed(self, limit: int = 10) -> list[SourceMeta]:
+        """Return failed sources that are still under the fail-count cap."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT source_id, url, title, views, published_at, channel, platform,
+                       COALESCE(fail_count, 0) AS fail_count
+                FROM sources
+                WHERE status = ?
+                  AND COALESCE(fail_count, 0) < ?
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (JobStatus.FAILED.value, self.max_fails, limit),
+            ).fetchall()
+        out: list[SourceMeta] = []
+        for row in rows:
+            # Prefer retries ahead of fresh low-score noise
+            score = 5e8 - float(row["fail_count"] or 0) * 1e6
+            out.append(
+                SourceMeta(
+                    source_id=row["source_id"],
+                    url=row["url"] or "",
+                    title=row["title"] or row["source_id"],
+                    views=int(row["views"] or 0),
+                    published_at=row["published_at"] or "",
+                    channel=row["channel"] or "",
+                    platform=row["platform"] or "youtube",
+                    query="db_retry",
+                    score=score,
+                )
+            )
+        if out:
+            logger.info("Queued %d retryable failed source(s) from DB", len(out))
+        return out
+
     def upsert_source(self, meta: SourceMeta, job_dir: str, status: JobStatus) -> None:
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:

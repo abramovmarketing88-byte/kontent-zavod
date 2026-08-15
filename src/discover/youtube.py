@@ -98,6 +98,7 @@ class YouTubeDiscoverer:
                     if not vid or vid not in details:
                         continue
                     if self.db.should_skip_discovery(vid):
+                        logger.debug("Skip already-seen %s", vid)
                         continue
 
                     detail = details[vid]
@@ -114,8 +115,20 @@ class YouTubeDiscoverer:
                     duration = _parse_duration(content.get("duration", ""))
 
                     if views < self.niche.min_views:
+                        logger.info(
+                            "Skip low views %s: %s < %s",
+                            vid,
+                            views,
+                            self.niche.min_views,
+                        )
                         continue
                     if duration <= 0 or duration > self.niche.max_duration_sec:
+                        logger.info(
+                            "Skip duration %s: %.1fs (max %s)",
+                            vid,
+                            duration,
+                            self.niche.max_duration_sec,
+                        )
                         continue
 
                     published = snippet.get("publishedAt", "")

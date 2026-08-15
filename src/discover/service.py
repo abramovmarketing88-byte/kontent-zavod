@@ -15,15 +15,28 @@ logger = logging.getLogger(__name__)
 
 
 def discover_sources(settings: Settings, db: Database) -> list[SourceMeta]:
-    db.reclaim_stale()
+    reclaimed = db.reclaim_stale()
     inbox = InboxDiscoverer(settings, db).discover()
     youtube = YouTubeDiscoverer(settings, db).discover()
     instagram = InstagramDiscoverer(settings, db).discover()
+    # Reclaimed / previously failed URLs may not appear in today's YouTube top-N.
+    # Pull them from DB so empty search pools still have work.
+    retries = db.list_retryable_failed(
+        limit=max(settings.max_videos_per_run * 5, 10)
+    )
     merged: dict[str, SourceMeta] = {}
-    for meta in inbox + youtube + instagram:
+    for meta in inbox + youtube + instagram + retries:
         existing = merged.get(meta.source_id)
         if not existing or meta.score > existing.score:
             merged[meta.source_id] = meta
     result = sorted(merged.values(), key=lambda m: m.score, reverse=True)
-    logger.info("Discovered %d new source(s)", len(result))
+    logger.info(
+        "Discovered %d source(s) (inbox=%d yt=%d ig=%d retry=%d reclaimed=%d)",
+        len(result),
+        len(inbox),
+        len(youtube),
+        len(instagram),
+        len(retries),
+        reclaimed,
+    )
     return result
