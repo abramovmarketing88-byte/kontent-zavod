@@ -1,4 +1,8 @@
-"""Persist a per-run diagnostic report (no secrets) for debugging."""
+"""Persist a per-run diagnostic report (no secrets) for debugging.
+
+Keeps the last N runs under reports/history/ and an index at reports/last-10.md
+so Cloud Agents can always see what failed recently.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,9 @@ from typing import Any
 from src.config import Settings
 
 logger = logging.getLogger(__name__)
+
+# How many past runs to keep on disk / publish for agent diagnosis.
+HISTORY_KEEP = 10
 
 SECRET_ENV_KEYS = (
     "API_KEY",
@@ -282,8 +289,145 @@ class RunReport:
             json.dumps(data, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        logger.info("Wrote run report %s (%s)", last_md, self.status)
+        self._prune_history(HISTORY_KEEP)
+        self._prune_run_logs(HISTORY_KEEP)
+        index_path = self.write_last10_index()
+        logger.info(
+            "Wrote run report %s (%s); index %s",
+            last_md,
+            self.status,
+            index_path.name,
+        )
         return last_md
+
+    def _prune_history(self, keep: int = HISTORY_KEEP) -> None:
+        """Keep only the newest `keep` history .md/.json pairs."""
+        md_files = sorted(
+            self.history_dir.glob("*.md"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for old in md_files[keep:]:
+            old.unlink(missing_ok=True)
+            old.with_suffix(".json").unlink(missing_ok=True)
+
+    def _prune_run_logs(self, keep: int = HISTORY_KEEP) -> None:
+        logs = sorted(
+            self.logs_dir.glob("*.log"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for old in logs[keep:]:
+            old.unlink(missing_ok=True)
+
+    def write_last10_index(self) -> Path:
+        """Write reports/last-10.md — compact index of recent runs for agents."""
+        md_files = sorted(
+            self.history_dir.glob("*.md"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )[:HISTORY_KEEP]
+
+        lines = [
+            f"# Last {HISTORY_KEEP} runs",
+            "",
+            "Cloud Agent: read this file + `reports/last-run.md` before diagnosing.",
+            f"Full reports: `reports/history/<run_id>.md` (kept ≤{HISTORY_KEEP}).",
+            "",
+            "| # | run_id | status | processed | trigger | error |",
+            "|---|--------|--------|-----------|---------|-------|",
+        ]
+        details: list[str] = []
+        for idx, path in enumerate(md_files, start=1):
+            data = self._load_history_json(path)
+            run_id = data.get("run_id") or path.stem
+            status = data.get("status") or "?"
+            processed = data.get("processed", "—")
+            trigger = (data.get("trigger_id") or "—")[:40]
+            errors = data.get("errors") or []
+            err = _redact(str(errors[0])[:120]) if errors else "—"
+            err_cell = err.replace("|", "/").replace("\n", " ")
+            lines.append(
+                f"| {idx} | `{run_id}` | **{status}** | {processed} | `{trigger}` | {err_cell} |"
+            )
+            details.append(self._history_detail_block(idx, path, data))
+
+        lines.extend(["", "## Details", ""])
+        if details:
+            lines.extend(details)
+        else:
+            lines.append("(no history yet)")
+        lines.append("")
+
+        index_path = self.reports_dir / "last-10.md"
+        index_path.write_text("\n".join(lines), encoding="utf-8")
+        agent_path = self.reports_dir / "AGENT.md"
+        agent_path.write_text(
+            "\n".join(
+                [
+                    "# Agent lookup — Kontent Zavod runs",
+                    "",
+                    "Always inspect these before guessing:",
+                    "",
+                    "1. `reports/last-run.md` — newest full report + log tail",
+                    "2. `reports/last-10.md` — index of the last 10 iterations",
+                    "3. `reports/history/<run_id>.md` — full report for a past run",
+                    "4. `reports/diagnose.md` — VPS health (if present)",
+                    "",
+                    "On GitHub (after VPS publish):",
+                    "",
+                    "```bash",
+                    "git fetch origin run-reports",
+                    "git show origin/run-reports:reports/last-10.md",
+                    "git show origin/run-reports:reports/last-run.md",
+                    "```",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return index_path
+
+    @staticmethod
+    def _load_history_json(md_path: Path) -> dict[str, Any]:
+        json_path = md_path.with_suffix(".json")
+        try:
+            return json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"run_id": md_path.stem}
+
+    @staticmethod
+    def _history_detail_block(idx: int, path: Path, data: dict[str, Any]) -> str:
+        run_id = data.get("run_id") or path.stem
+        status = data.get("status") or "?"
+        started = data.get("started_at") or "—"
+        finished = data.get("finished_at") or "—"
+        errors = data.get("errors") or []
+        stages = data.get("stages") or []
+        tail = data.get("log_tail") or ""
+        stage_line = ", ".join(
+            f"{s.get('name')}" for s in stages[-8:]
+        ) or "(none)"
+        err_block = _redact("\n".join(str(e) for e in errors[:3])) if errors else "(none)"
+        if len(tail) > 2500:
+            tail = "…\n" + tail[-2500:]
+        return "\n".join(
+            [
+                f"### {idx}. `{run_id}` — **{status}**",
+                f"- file: `reports/history/{path.name}`",
+                f"- started: {started} → finished: {finished}",
+                f"- stages: {stage_line}",
+                "- errors:",
+                "```",
+                err_block,
+                "```",
+                "- log_tail:",
+                "```",
+                _redact(tail) if tail else "(empty)",
+                "```",
+                "",
+            ]
+        )
 
     def _detach_file_logger(self) -> None:
         if self._file_handler is not None:

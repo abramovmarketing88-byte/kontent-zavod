@@ -170,9 +170,8 @@ class Pipeline:
             write_transcript(path, transcript)
             self.db.update_status(meta.source_id, JobStatus.ANALYZED)
             if self.settings.telegram_notify:
-                self._tg(
-                    f"🧠 Тема без исходника\n\n{meta.title}\n\n{topic_text[:1500]}"
-                )
+                # topic_text already starts with the title line — don't repeat it
+                self._tg(f"🧠 Тема без исходника\n\n{topic_text[:1800]}")
         else:
             transcript = self.analyzer.analyze(path, meta)
             write_transcript(path, transcript)

@@ -38,7 +38,7 @@ def test_redact_youtube_and_telegram_secrets() -> None:
 
 def test_run_report_redacts_and_writes(tmp_path: Path) -> None:
     from src.config import InstagramNicheConfig, NicheConfig, Settings
-    from src.run_report import RunReport, _redact
+    from src.run_report import HISTORY_KEEP, RunReport, _redact
 
     assert "***" in _redact("api_key=sk-secret-value")
 
@@ -84,6 +84,74 @@ def test_run_report_redacts_and_writes(tmp_path: Path) -> None:
     assert "test-run" in md
     assert "empty" in md
     assert "secret" not in md.lower() or "has_cursor_key" in md
+    assert (tmp_path / "reports" / "last-10.md").is_file()
+    assert (tmp_path / "reports" / "AGENT.md").is_file()
+    index = (tmp_path / "reports" / "last-10.md").read_text(encoding="utf-8")
+    assert "test-run" in index
+    assert "Last" in index
+
+
+def test_run_report_keeps_last_10_history(tmp_path: Path) -> None:
+    from src.config import InstagramNicheConfig, NicheConfig, Settings
+    from src.run_report import HISTORY_KEEP, RunReport
+
+    settings = Settings(
+        root=tmp_path,
+        data_dir=tmp_path / "data",
+        jobs_dir=tmp_path / "jobs",
+        output_dir=tmp_path / "output",
+        inbox_dir=tmp_path / "inbox",
+        brand_dir=tmp_path / "brand",
+        config_dir=tmp_path / "config",
+        db_path=tmp_path / "data" / "factory.db",
+        cursor_api_key="",
+        elevenlabs_api_key="",
+        elevenlabs_voice_id="",
+        youtube_api_key="",
+        pexels_api_key="",
+        llm_api_key="",
+        llm_base_url=None,
+        llm_model="gpt-4o-mini",
+        heygen_api_key="",
+        heygen_avatar_id="",
+        heygen_intro_sec=8.0,
+        renderer="faceless",
+        telegram_bot_token="",
+        telegram_owner_chat_id="",
+        telegram_notify=False,
+        max_videos_per_run=1,
+        schedule_hours=6,
+        daily_at="09:00",
+        schedule_tz="Europe/Moscow",
+        whisper_model="base",
+        transcribe_backend="faster_whisper",
+        target_duration_min=30.0,
+        target_duration_max=40.0,
+        niche=NicheConfig(),
+        instagram=InstagramNicheConfig(),
+    )
+    for i in range(HISTORY_KEEP + 3):
+        r = RunReport(settings, run_id=f"run-{i:02d}")
+        if i % 2 == 0:
+            r.fail(RuntimeError(f"boom-{i}"))
+        else:
+            r.complete(1)
+    hist = list((tmp_path / "reports" / "history").glob("*.md"))
+    assert len(hist) == HISTORY_KEEP
+    index = (tmp_path / "reports" / "last-10.md").read_text(encoding="utf-8")
+    assert "run-12" in index or "run-11" in index
+    assert "boom-" in index
+
+
+def test_heygen_payload_has_no_dimension() -> None:
+    import inspect
+
+    from src.heygen import client as heygen_client
+
+    src = inspect.getsource(heygen_client.HeyGenClient.create_avatar_video)
+    assert "dimension" not in src.split("payload", 1)[-1].split("with httpx", 1)[0]
+    assert "aspect_ratio" in src
+    assert "resolution" in src
 
 
 def test_captions() -> None:

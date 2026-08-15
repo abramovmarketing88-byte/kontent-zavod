@@ -48,15 +48,13 @@ class HeyGenClient:
         aspect_ratio: str = "9:16",
         resolution: str = "1080p",
     ) -> str:
+        # HeyGen v3 rejects unknown fields ("Extra inputs are not permitted").
+        # Aspect comes from aspect_ratio + resolution only — do not send dimension.
         payload = {
             "type": "avatar",
             "avatar_id": avatar_id,
             "audio_asset_id": audio_asset_id,
             "aspect_ratio": aspect_ratio,
-            "dimension": {
-                "width": 1080,
-                "height": 1920,
-            },
             "resolution": resolution,
         }
         with httpx.Client(timeout=60.0) as client:

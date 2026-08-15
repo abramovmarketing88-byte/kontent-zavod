@@ -120,6 +120,15 @@ redact() {
   fi
   echo
 
+  echo "## Last-10 index"
+  if [ -f reports/last-10.md ]; then
+    echo
+    redact < reports/last-10.md | head -n 120
+  else
+    echo "- reports/last-10.md missing"
+  fi
+  echo
+
   echo "## Last run report"
   if [ -f reports/last-run.md ]; then
     echo
@@ -170,10 +179,8 @@ if [ -f .env ] && grep -Eq '^TELEGRAM_NOTIFY=(true|1|yes)' .env; then
   fi
 fi
 
-# Optional publish to run-reports branch
+# Publish diagnose alongside last-run / last-10 — never overwrite last-run.md
 if [ -x scripts/publish_run_report.sh ]; then
-  # temporarily alias last-run for publisher reuse
-  cp "$OUT" reports/last-run.md
   scripts/publish_run_report.sh || true
 fi
 

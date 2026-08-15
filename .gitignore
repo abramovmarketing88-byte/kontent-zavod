@@ -18,3 +18,6 @@ inbox/processed/
 reports/history/
 reports/last-run.md
 reports/last-run.json
+reports/last-10.md
+reports/diagnose.md
+# keep reports/AGENT.md and reports/README.md tracked
