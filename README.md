@@ -45,6 +45,24 @@ bash /opt/kontent-zavod/scripts/smoke_e2e.sh 'https://www.youtube.com/shorts/XXX
 
 **Прокси:** compose передаёт `HTTP_PROXY=http://127.0.0.1:7890`, но entrypoint **сбрасывает** его, если mihomo мёртв (`PROXY_REQUIRED=false` по умолчанию).
 
+## Локальный прогон (без VPS)
+
+Если сервера нет под рукой — гоняй прямо в Cloud Agent / на ноуте:
+
+```bash
+# минимальные секреты в .env или Cursor Secrets:
+# OPENROUTER_API_KEY, YOUTUBE_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_OWNER_CHAT_ID
+# (ElevenLabs / Pexels / HeyGen опциональны: Edge TTS + placeholder B-roll + faceless)
+
+bash scripts/run_local.sh 'https://www.youtube.com/shorts/XXXX'
+# или автопоиск ниши:
+bash scripts/run_local.sh
+```
+
+Скрипт сам сбрасывает `HTTP_PROXY` (чтобы не ходить в мёртвый mihomo с VPS), ставит `RENDERER=faceless` и пишет `reports/last-run.md`.
+
+Docker без прокси: `docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm worker python -m src.pipeline --once`
+
 ## Быстрый старт
 
 1. Скопируй `.env.example` → `.env` и заполни ключи API

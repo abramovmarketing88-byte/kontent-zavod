@@ -26,11 +26,13 @@ class ElevenLabsVoice:
 
     def synthesize(self, job_path: Path, remake: RemakeSpec) -> VoiceResult:
         if not self.settings.elevenlabs_api_key:
-            raise RuntimeError("ELEVENLABS_API_KEY not set")
+            logger.warning("ELEVENLABS_API_KEY not set — using Edge TTS")
+            return synthesize_edge(job_path, remake)
 
         voice_id = self.settings.elevenlabs_voice_id or self.voice_cfg.get("voice_id")
         if not voice_id:
-            raise RuntimeError("ELEVENLABS_VOICE_ID not set")
+            logger.warning("ELEVENLABS_VOICE_ID not set — using Edge TTS")
+            return synthesize_edge(job_path, remake)
 
         text = remake.script.strip()
         payload = {

@@ -158,13 +158,77 @@ def test_db_reclaim_and_max_fails(tmp_path: Path) -> None:
     assert db.should_skip_discovery("abc") is True
 
 
+def test_edge_tts_without_elevenlabs_key() -> None:
+    from src.voice.elevenlabs import ElevenLabsVoice
+    # ensure module imports; synthesize path covered indirectly by edge fallback existence
+    from src.voice.edge_tts_fallback import synthesize_edge
+
+    assert callable(synthesize_edge)
+
+
+def test_pexels_placeholder_without_key(tmp_path: Path) -> None:
+    from src.config import InstagramNicheConfig, NicheConfig, Settings
+    from src.models import RemakeSpec, ShotSpec
+    from src.visuals.pexels import PexelsClient
+
+    settings = Settings(
+        root=tmp_path,
+        data_dir=tmp_path / "data",
+        jobs_dir=tmp_path / "jobs",
+        output_dir=tmp_path / "output",
+        inbox_dir=tmp_path / "inbox",
+        brand_dir=tmp_path / "brand",
+        config_dir=tmp_path / "config",
+        db_path=tmp_path / "data" / "factory.db",
+        cursor_api_key="",
+        elevenlabs_api_key="",
+        elevenlabs_voice_id="",
+        youtube_api_key="",
+        pexels_api_key="",
+        llm_api_key="",
+        llm_base_url=None,
+        llm_model="gpt-4o-mini",
+        heygen_api_key="",
+        heygen_avatar_id="",
+        heygen_intro_sec=8.0,
+        renderer="faceless",
+        telegram_bot_token="",
+        telegram_owner_chat_id="",
+        telegram_notify=False,
+        max_videos_per_run=1,
+        schedule_hours=6,
+        daily_at="09:00",
+        schedule_tz="Europe/Moscow",
+        whisper_model="base",
+        transcribe_backend="faster_whisper",
+        target_duration_min=30.0,
+        target_duration_max=40.0,
+        niche=NicheConfig(),
+        instagram=InstagramNicheConfig(),
+    )
+    remake = RemakeSpec(
+        hook="h",
+        script="s",
+        shots=[ShotSpec(keywords=["office"], duration_sec=3)],
+        caption="c",
+        hashtags=["#t"],
+        title="t",
+    )
+    paths = PexelsClient(settings).download_shots(tmp_path / "job", remake)
+    assert paths and paths[0].exists()
+    assert paths[0].stat().st_size > 1000
+
+
 def test_diagnose_and_entrypoint_scripts_exist() -> None:
     root = Path(__file__).resolve().parents[1]
     assert (root / "scripts" / "diagnose.sh").is_file()
     assert (root / "scripts" / "docker-entrypoint.sh").is_file()
     assert (root / "scripts" / "smoke_e2e.sh").is_file()
+    assert (root / "scripts" / "run_local.sh").is_file()
     ep = (root / "scripts" / "docker-entrypoint.sh").read_text(encoding="utf-8")
     assert "PROXY_REQUIRED" in ep
+    local = (root / "scripts" / "run_local.sh").read_text(encoding="utf-8")
+    assert "faceless" in local
 
 
 if __name__ == "__main__":

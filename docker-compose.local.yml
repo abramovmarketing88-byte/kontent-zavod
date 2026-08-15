@@ -1,0 +1,9 @@
+# Local / Cloud Agent override — no mihomo proxy
+services:
+  worker:
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      NO_PROXY: "*"
+      PROXY_REQUIRED: "false"
+      RENDERER: faceless

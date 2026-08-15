@@ -1,20 +1,23 @@
-"""Pexels stock video fetcher."""
+"""Pexels stock video fetcher with local ffmpeg placeholder fallback."""
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import subprocess
 from pathlib import Path
 
 import httpx
 
 from src.config import Settings
+from src.ffmpeg_bin import get_ffmpeg
 from src.models import RemakeSpec
 
 logger = logging.getLogger(__name__)
 
 SEARCH_URL = "https://api.pexels.com/videos/search"
 MIN_HEIGHT = 1080
+PLACEHOLDER_COLORS = ("#1a1a2e", "#16213e", "#0f3460", "#533483", "#2c3e50")
 
 
 class PexelsClient:
@@ -29,17 +32,17 @@ class PexelsClient:
         *,
         refresh: bool = False,
     ) -> list[Path]:
-        if not self.settings.pexels_api_key:
-            raise RuntimeError("PEXELS_API_KEY not set")
-
         shots_dir = job_path / "shots"
         if refresh and shots_dir.exists():
             for old in shots_dir.glob("*.mp4"):
                 old.unlink()
+        shots_dir.mkdir(parents=True, exist_ok=True)
 
-        shots_dir.mkdir(exist_ok=True)
+        if not self.settings.pexels_api_key:
+            logger.warning("PEXELS_API_KEY not set — generating placeholder clips")
+            return self._generate_placeholders(shots_dir, remake)
+
         paths: list[Path] = []
-
         for idx, shot in enumerate(remake.shots):
             query = " ".join(shot.keywords) if shot.keywords else "cinematic business vertical"
             clip_path = shots_dir / f"shot_{idx:02d}.mp4"
@@ -47,15 +50,69 @@ class PexelsClient:
                 paths.append(clip_path)
                 continue
             pick = _pick_index(query, idx)
-            self._download_one(query, clip_path, pick_index=pick)
-            paths.append(clip_path)
+            try:
+                self._download_one(query, clip_path, pick_index=pick)
+                paths.append(clip_path)
+            except Exception as exc:
+                logger.warning("Pexels shot %d failed (%s) — placeholder", idx, exc)
+                paths.append(
+                    self._make_placeholder(
+                        shots_dir / f"shot_{idx:02d}.mp4",
+                        max(shot.duration_sec, 3.0),
+                        PLACEHOLDER_COLORS[idx % len(PLACEHOLDER_COLORS)],
+                    )
+                )
 
         if not paths:
             fallback = shots_dir / "shot_00.mp4"
-            self._download_one("cinematic office vertical 4k", fallback, pick_index=0)
+            try:
+                self._download_one("cinematic office vertical 4k", fallback, pick_index=0)
+            except Exception as exc:
+                logger.warning("Pexels fallback failed (%s) — placeholder", exc)
+                self._make_placeholder(fallback, 5.0, PLACEHOLDER_COLORS[0])
             paths.append(fallback)
 
         return paths
+
+    def _generate_placeholders(self, shots_dir: Path, remake: RemakeSpec) -> list[Path]:
+        shots = remake.shots or []
+        if not shots:
+            return [
+                self._make_placeholder(
+                    shots_dir / "shot_00.mp4", 5.0, PLACEHOLDER_COLORS[0]
+                )
+            ]
+        paths: list[Path] = []
+        for idx, shot in enumerate(shots):
+            paths.append(
+                self._make_placeholder(
+                    shots_dir / f"shot_{idx:02d}.mp4",
+                    max(getattr(shot, "duration_sec", 3.0) or 3.0, 3.0),
+                    PLACEHOLDER_COLORS[idx % len(PLACEHOLDER_COLORS)],
+                )
+            )
+        return paths
+
+    def _make_placeholder(self, dest: Path, duration: float, color: str) -> Path:
+        color = color.lstrip("#")
+        cmd = [
+            get_ffmpeg(),
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=0x{color}:s=1080x1920:d={duration:.2f}:r=30",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-t",
+            f"{duration:.2f}",
+            str(dest),
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+        logger.info("Placeholder clip %.1fs -> %s", duration, dest.name)
+        return dest
 
     def _download_one(self, query: str, dest: Path, *, pick_index: int = 0) -> None:
         videos = self._search(query, orientation="portrait")
