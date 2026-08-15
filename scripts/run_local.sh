@@ -42,6 +42,8 @@ require() {
 }
 
 echo "=== Local run preflight ==="
+# shellcheck disable=SC1091
+[ -x "$ROOT/scripts/show_author.sh" ] && bash "$ROOT/scripts/show_author.sh" || true
 if [ -n "${OPENROUTER_API_KEY:-}${OPENAI_API_KEY:-}${CURSOR_API_KEY:-}" ]; then
   echo "OK: LLM key (OpenRouter/OpenAI/Cursor)"
 else

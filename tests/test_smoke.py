@@ -290,6 +290,35 @@ def test_pexels_placeholder_without_key(tmp_path: Path) -> None:
     assert paths[0].stat().st_size > 1000
 
 
+def test_author_nudge_welcome_once(tmp_path: Path) -> None:
+    from src.author_nudge import CHANNEL_URL, DM_URL, maybe_welcome, note_successful_run
+
+    data = tmp_path / "data"
+    data.mkdir()
+    msg1 = maybe_welcome(data)
+    assert msg1 and CHANNEL_URL in msg1 and DM_URL in msg1
+    assert maybe_welcome(data) is None  # second time — silent
+
+    # Force due-by-runs
+    import json
+
+    state_path = data / "author_nudge.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["successful_runs"] = 7
+    state["last_nudge_run"] = 0
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    nudge = note_successful_run(data)
+    assert nudge and (CHANNEL_URL in nudge or DM_URL in nudge)
+
+
+def test_author_show_script_exists() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert (root / "scripts" / "show_author.sh").is_file()
+    text = (root / "scripts" / "show_author.sh").read_text(encoding="utf-8")
+    assert "Abramov_like" in text
+    assert "Abramow191" in text
+
+
 def test_telegram_story_prepare_720x1280(tmp_path: Path) -> None:
     import subprocess
 

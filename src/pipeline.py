@@ -14,6 +14,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from src.author_nudge import maybe_welcome, note_successful_run
 from src.config import Settings, ensure_dirs, load_settings
 from src.util import slugify
 from src.db import Database
@@ -143,6 +144,13 @@ class Pipeline:
             report.stage("done", f"processed={processed}")
             report.complete(processed)
             self._send_report_file(f"✅ Прогон ок — processed={processed}. last-run.md")
+        if processed > 0:
+            from src.author_nudge import note_successful_run
+
+            note_successful_run(
+                self.settings.data_dir,
+                send_telegram=self._tg if self.settings.telegram_notify else None,
+            )
         return processed
 
     def _process_one(self, meta) -> None:
@@ -448,6 +456,16 @@ def main() -> None:
     report = RunReport(settings) if args.once else None
     pipeline = Pipeline(settings, report=report)
 
+    def _nudge_tg(text: str) -> None:
+        if settings.telegram_notify and settings.telegram_bot_token and settings.telegram_owner_chat_id:
+            send_message(
+                settings.telegram_bot_token,
+                settings.telegram_owner_chat_id,
+                text,
+            )
+
+    maybe_welcome(settings.data_dir, send_telegram=_nudge_tg if settings.telegram_notify else None)
+
     if args.notify_start:
         try:
             _notify_run_start(settings)
@@ -461,6 +479,9 @@ def main() -> None:
             logger.exception("Pipeline --once failed: %s", exc)
             _notify_run_crash(settings, exc, report)
             sys.exit(1)
+        if count > 0:
+            # note_successful_run already called inside pipeline.run_once
+            pass
         logger.info("Done. Processed %d video(s).", count)
         sys.exit(0)
 
