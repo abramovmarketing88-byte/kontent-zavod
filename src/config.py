@@ -17,6 +17,7 @@ class NicheConfig:
     max_age_days: int = 14
     top_n_per_query: int = 5
     max_duration_sec: int = 60
+    title_stopwords: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -100,6 +101,7 @@ def load_settings() -> Settings:
         max_age_days=int(niche_data.get("max_age_days", 14)),
         top_n_per_query=int(niche_data.get("top_n_per_query", 5)),
         max_duration_sec=int(niche_data.get("max_duration_sec", 60)),
+        title_stopwords=list(niche_data.get("title_stopwords") or []),
     )
 
     ig_data = niche_data.get("instagram") or {}

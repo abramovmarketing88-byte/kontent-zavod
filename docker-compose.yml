@@ -4,9 +4,12 @@ services:
     env_file: .env
     network_mode: host
     environment:
-      HTTP_PROXY: http://127.0.0.1:7890
-      HTTPS_PROXY: http://127.0.0.1:7890
-      NO_PROXY: localhost,127.0.0.1,192.168.0.0/16
+      # Optional mihomo/Clash. Entrypoint clears these if :7890 is dead
+      # unless PROXY_REQUIRED=true in .env
+      HTTP_PROXY: ${HTTP_PROXY:-http://127.0.0.1:7890}
+      HTTPS_PROXY: ${HTTPS_PROXY:-http://127.0.0.1:7890}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,192.168.0.0/16}
+      PROXY_REQUIRED: ${PROXY_REQUIRED:-false}
     volumes:
       - ./output:/app/output
       - ./jobs:/app/jobs
@@ -16,3 +19,4 @@ services:
       - ./config:/app/config
       - ./reports:/app/reports
       - ./logs:/app/logs
+      - ./scripts/docker-entrypoint.sh:/docker-entrypoint.sh:ro

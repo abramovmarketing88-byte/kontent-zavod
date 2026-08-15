@@ -3,10 +3,12 @@
 После каждого `--once` завод пишет:
 
 - `reports/last-run.md` / `reports/last-run.json` — последний прогон (без секретов)
+- `reports/diagnose.md` — снимок здоровья VPS (`scripts/diagnose.sh`)
 - `reports/history/` — архив
 - `logs/runs/<id>.log` — полный лог прогона
 
 При ошибке файл `last-run.md` уходит в Telegram как документ.
+При падении run-once автоматически вызывается `diagnose.sh`.
 
 Если на сервере есть write-доступ к GitHub (`GITHUB_TOKEN` или write deploy key),
 скрипт `scripts/publish_run_report.sh` пушит отчёт в ветку **`run-reports`**.

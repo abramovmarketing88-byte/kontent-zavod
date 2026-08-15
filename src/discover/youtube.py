@@ -17,6 +17,20 @@ logger = logging.getLogger(__name__)
 YOUTUBE_SEARCH = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_VIDEOS = "https://www.googleapis.com/youtube/v3/videos"
 
+# Drop comedy/meme noise that often tops viewCount searches.
+DEFAULT_TITLE_STOPWORDS = (
+    "comedy",
+    "meme",
+    "memes",
+    "funny",
+    "юмор",
+    "прикол",
+    "приколы",
+    "sketch",
+    "stand up",
+    "standup",
+)
+
 
 def _parse_duration(iso: str) -> float:
     """Parse ISO 8601 duration PT1M30S -> seconds."""
@@ -42,11 +56,19 @@ def _score(views: int, published_at: str) -> float:
     return views / _hours_since(published_at)
 
 
+def _title_is_noise(title: str, stopwords: tuple[str, ...] | list[str]) -> bool:
+    lowered = (title or "").lower()
+    return any(word.lower() in lowered for word in stopwords)
+
+
 class YouTubeDiscoverer:
     def __init__(self, settings: Settings, db: Database) -> None:
         self.settings = settings
         self.db = db
         self.niche = settings.niche
+        self.stopwords = tuple(
+            getattr(settings.niche, "title_stopwords", None) or DEFAULT_TITLE_STOPWORDS
+        )
 
     def discover(self, limit: int | None = None) -> list[SourceMeta]:
         if not self.settings.youtube_api_key:
@@ -82,6 +104,11 @@ class YouTubeDiscoverer:
                     stats = detail.get("statistics", {})
                     content = detail.get("contentDetails", {})
                     snippet = detail.get("snippet", item.get("snippet", {}))
+                    title = snippet.get("title", "")
+
+                    if _title_is_noise(title, self.stopwords):
+                        logger.info("Skip noise title %s: %s", vid, title)
+                        continue
 
                     views = int(stats.get("viewCount", 0))
                     duration = _parse_duration(content.get("duration", ""))
@@ -95,7 +122,7 @@ class YouTubeDiscoverer:
                     meta = SourceMeta(
                         source_id=vid,
                         url=f"https://www.youtube.com/shorts/{vid}",
-                        title=snippet.get("title", ""),
+                        title=title,
                         views=views,
                         published_at=published,
                         channel=snippet.get("channelTitle", ""),

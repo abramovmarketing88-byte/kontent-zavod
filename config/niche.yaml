@@ -1,15 +1,15 @@
 # Ниша: русский бизнес / маркетинг / соцсети
 
 search_queries:
-  - "продвижение инстаграм shorts"
-  - "маркетинг shorts"
-  - "smm советы shorts"
+  - "продвижение инстаграм советы"
+  - "smm советы reels"
   - "как набрать подписчиков instagram"
-  - "reels маркетинг"
-  - "продажи через instagram"
+  - "reels маркетинг стратегия"
+  - "продажи через инстаграм"
+  - "контент план инстаграм"
 
 # Минимум просмотров для «залетевшего» ролика
-min_views: 50000
+min_views: 20000
 
 # Максимальный возраст ролика (дни)
 max_age_days: 14
@@ -20,6 +20,19 @@ top_n_per_query: 5
 # Максимальная длительность Short (сек)
 max_duration_sec: 60
 
+# Отсекаем мемы/юмор из автопоиска
+title_stopwords:
+  - comedy
+  - meme
+  - memes
+  - funny
+  - юмор
+  - прикол
+  - приколы
+  - sketch
+  - stand up
+  - standup
+
 instagram:
   hashtags:
     - "reelsмаркетинг"
@@ -27,6 +40,6 @@ instagram:
     - "продвижениеinstagram"
     - "контентзавод"
   accounts: []
-  min_views: 50000
+  min_views: 20000
   max_age_days: 14
   max_duration_sec: 60

@@ -118,6 +118,55 @@ def test_alignment() -> None:
     assert [x.word for x in w] == ["hi", "!"]
 
 
+def test_title_stopwords() -> None:
+    from src.discover.youtube import _title_is_noise
+
+    assert _title_is_noise("Network marketing 🤣 #comedy", ("comedy", "meme"))
+    assert not _title_is_noise("SMM советы для Reels", ("comedy", "meme"))
+
+
+def test_inbox_instagram_and_youtube_ids() -> None:
+    from src.discover.inbox import extract_instagram_id, extract_youtube_id
+
+    assert extract_youtube_id("https://www.youtube.com/shorts/7ppZvsgdQ3g") == "7ppZvsgdQ3g"
+    assert extract_instagram_id("https://www.instagram.com/reel/AbCdef12345/") == "AbCdef12345"
+
+
+def test_db_reclaim_and_max_fails(tmp_path: Path) -> None:
+    from src.db import Database
+    from src.models import JobStatus, SourceMeta
+
+    db = Database(tmp_path / "factory.db")
+    db.stale_hours = 0  # everything older than now is stale after tiny sleep
+    meta = SourceMeta(source_id="abc", url="https://youtu.be/abc", title="t")
+    db.upsert_source(meta, str(tmp_path / "jobs" / "abc"), JobStatus.DISCOVERED)
+    # Force updated_at into the past
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    old = (datetime.now(timezone.utc) - timedelta(hours=10)).isoformat()
+    with sqlite3.connect(db.db_path) as conn:
+        conn.execute("UPDATE sources SET updated_at = ?", (old,))
+        conn.commit()
+    assert db.reclaim_stale() == 1
+    assert db.should_skip_discovery("abc") is False  # failed with 0 fails → retry
+
+    db.update_status("abc", JobStatus.FAILED, "boom")
+    db.update_status("abc", JobStatus.FAILED, "boom")
+    db.update_status("abc", JobStatus.FAILED, "boom")
+    db.max_fails = 3
+    assert db.should_skip_discovery("abc") is True
+
+
+def test_diagnose_and_entrypoint_scripts_exist() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert (root / "scripts" / "diagnose.sh").is_file()
+    assert (root / "scripts" / "docker-entrypoint.sh").is_file()
+    assert (root / "scripts" / "smoke_e2e.sh").is_file()
+    ep = (root / "scripts" / "docker-entrypoint.sh").read_text(encoding="utf-8")
+    assert "PROXY_REQUIRED" in ep
+
+
 if __name__ == "__main__":
     test_captions()
     test_parse_remake()

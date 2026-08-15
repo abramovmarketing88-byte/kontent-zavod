@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def discover_sources(settings: Settings, db: Database) -> list[SourceMeta]:
+    db.reclaim_stale()
     inbox = InboxDiscoverer(settings, db).discover()
     youtube = YouTubeDiscoverer(settings, db).discover()
     instagram = InstagramDiscoverer(settings, db).discover()

@@ -27,12 +27,23 @@ tail -n 40 /opt/kontent-zavod/logs/run-once.log
 На сервере после прогона:
 
 ```bash
+# Полная диагностика (прокси, cron, DB, last-run) → reports/diagnose.md + Telegram
+bash /opt/kontent-zavod/scripts/diagnose.sh
+
 cat /opt/kontent-zavod/reports/last-run.md
 tail -n 100 /opt/kontent-zavod/logs/pipeline.last.log
 ```
 
+Предсказуемый smoke (одна ссылка из inbox):
+
+```bash
+bash /opt/kontent-zavod/scripts/smoke_e2e.sh 'https://www.youtube.com/shorts/XXXX'
+```
+
 При падении бот присылает **`last-run.md`** в Telegram.  
 Опционально сервер пушит тот же отчёт в ветку **`run-reports`** (нужен `GITHUB_TOKEN` или write deploy key) — тогда агент читает его прямо с GitHub.
+
+**Прокси:** compose передаёт `HTTP_PROXY=http://127.0.0.1:7890`, но entrypoint **сбрасывает** его, если mihomo мёртв (`PROXY_REQUIRED=false` по умолчанию).
 
 ## Быстрый старт
 
