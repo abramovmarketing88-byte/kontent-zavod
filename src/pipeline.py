@@ -28,7 +28,6 @@ from src.jobs import (
 )
 from src.models import JobStatus, today_output_dir
 from src.publish.telegram import (
-    notify_owner,
     send_document,
     send_message,
     send_source_breakdown,
@@ -230,94 +229,25 @@ class Pipeline:
         write_caption(out_dir, slug, remake.caption, remake.hashtags)
         logger.info("Output: %s", dest_video)
 
-        if self.settings.telegram_notify:
-            if report:
-                report.stage("telegram_publish", str(dest_video))
-            caption = (
-                f"🎬 Готов новый Reels\n\n{remake.caption}\n\n"
-                f"{' '.join(remake.hashtags)}"
-            )
-            notify_owner(
-                self.settings.telegram_bot_token,
-                self.settings.telegram_owner_chat_id,
-                dest_video,
-                caption,
-            )
-            self.db.update_status(meta.source_id, JobStatus.PUBLISHED)
-            logger.info("Sent to Telegram DM: %s", self.settings.telegram_owner_chat_id)
+        from src.publish.base import PublishMeta
+        from src.publish.orchestrator import PublishOrchestrator
 
-        if self.settings.youtube_upload:
-            self._publish_youtube(dest_video, remake, report)
-
-        if self.settings.telegram_story_upload:
-            self._publish_telegram_story(dest_video, remake, report)
-
-    def _publish_telegram_story(self, dest_video, remake, report) -> None:
-        from src.publish.telegram_story import (
-            TelegramStoryError,
-            discover_business_connection_id,
-            prepare_story_video,
-            post_story_video,
+        meta_pub = PublishMeta(
+            title=remake.title or remake.hook or slug,
+            caption=remake.caption or "",
+            hashtags=list(remake.hashtags or []),
+            source_id=meta.source_id,
+            video_path=dest_video,
         )
-
-        if report:
-            report.stage("telegram_story", str(dest_video))
-        try:
-            conn = self.settings.telegram_business_connection_id.strip()
-            if not conn:
-                conn = discover_business_connection_id(self.settings.telegram_bot_token) or ""
-            if not conn:
-                cache = self.settings.data_dir / "business_connection.id"
-                if cache.exists():
-                    conn = cache.read_text(encoding="utf-8").strip()
-            prepared = self.settings.data_dir / f"story_{dest_video.stem}.mp4"
-            prepare_story_video(dest_video, prepared)
-            story = post_story_video(
-                self.settings.telegram_bot_token,
-                conn,
-                prepared,
-                caption=(remake.caption or remake.title or "")[:500],
-                active_period=self.settings.telegram_story_active_period,
-            )
-            self._tg(
-                f"✅ Telegram Story\nstory_id={story.get('id')}\n"
-                f"chat={(story.get('chat') or {}).get('id')}"
-            )
-        except TelegramStoryError as exc:
-            logger.exception("Telegram story failed: %s", exc)
-            if report:
-                report.errors.append(f"telegram_story: {exc}")
-            self._tg(f"❌ Telegram Story failed\n{exc}")
-
-    def _publish_youtube(self, dest_video, remake, report) -> None:
-        from src.publish.youtube import YouTubeUploadError, YouTubeUploader
-
-        if report:
-            report.stage("youtube_publish", str(dest_video))
-        try:
-            uploader = YouTubeUploader(
-                client_id=self.settings.youtube_client_id,
-                client_secret=self.settings.youtube_client_secret,
-                refresh_token=self.settings.youtube_refresh_token,
-                privacy=self.settings.youtube_privacy,
-                category_id=self.settings.youtube_category_id,
-            )
-            tags = [h.lstrip("#") for h in (remake.hashtags or []) if h]
-            result = uploader.upload_short(
-                dest_video,
-                title=remake.title or remake.hook or dest_video.stem,
-                description=(
-                    f"{remake.caption}\n\n" + " ".join(remake.hashtags or [])
-                ).strip(),
-                tags=tags,
-            )
-            self._tg(f"✅ YouTube Short\n{result['title']}\n{result['url']}")
-            logger.info("YouTube Short: %s", result["url"])
-        except YouTubeUploadError as exc:
-            logger.exception("YouTube upload failed: %s", exc)
-            if report:
-                report.errors.append(f"youtube_upload: {exc}")
-            self._tg(f"❌ YouTube Short upload failed\n{exc}")
+        results = PublishOrchestrator(
+            self.settings,
+            notify=self._tg if self.settings.telegram_notify else None,
+            report=report,
+        ).publish_all(dest_video, meta_pub)
+        if any(r.status == "ok" and r.platform == "telegram_dm" for r in results):
+            self.db.update_status(meta.source_id, JobStatus.PUBLISHED)
+        elif any(r.status == "ok" for r in results):
+            self.db.update_status(meta.source_id, JobStatus.PUBLISHED)
 
     def _ensure_target_duration(self, path, meta, transcript, remake, voice_result):
         min_sec = self.settings.target_duration_min

@@ -290,6 +290,84 @@ def test_pexels_placeholder_without_key(tmp_path: Path) -> None:
     assert paths[0].stat().st_size > 1000
 
 
+def test_publish_orchestrator_skips_without_keys(tmp_path: Path) -> None:
+    from src.config import InstagramNicheConfig, NicheConfig, Settings
+    from src.publish.base import PublishMeta
+    from src.publish.orchestrator import PublishOrchestrator, default_publishers
+
+    names = [p.name for p in default_publishers()]
+    assert "telegram_dm" in names
+    assert "youtube_shorts" in names
+    assert "vk_video" in names
+    assert "instagram_reels" in names
+    assert "max_channel" in names
+    assert "max_stories" in names
+    assert "tiktok" in names
+
+    settings = Settings(
+        root=tmp_path,
+        data_dir=tmp_path / "data",
+        jobs_dir=tmp_path / "jobs",
+        output_dir=tmp_path / "output",
+        inbox_dir=tmp_path / "inbox",
+        brand_dir=tmp_path / "brand",
+        config_dir=tmp_path / "config",
+        db_path=tmp_path / "data" / "factory.db",
+        cursor_api_key="",
+        elevenlabs_api_key="",
+        elevenlabs_voice_id="",
+        youtube_api_key="",
+        pexels_api_key="",
+        llm_api_key="",
+        llm_base_url=None,
+        llm_model="gpt-4o-mini",
+        heygen_api_key="",
+        heygen_avatar_id="",
+        heygen_intro_sec=8.0,
+        renderer="faceless",
+        telegram_bot_token="",
+        telegram_owner_chat_id="",
+        telegram_notify=False,
+        max_videos_per_run=1,
+        schedule_hours=6,
+        daily_at="09:00",
+        schedule_tz="Europe/Moscow",
+        whisper_model="base",
+        transcribe_backend="faster_whisper",
+        target_duration_min=30.0,
+        target_duration_max=40.0,
+        niche=NicheConfig(),
+        instagram=InstagramNicheConfig(),
+        publish_enabled=True,
+        publish_vk=True,
+        publish_instagram=True,
+        publish_max=True,
+        publish_max_stories=True,
+        publish_tiktok=True,
+    )
+    video = tmp_path / "out.mp4"
+    video.write_bytes(b"0" * 20_000)
+    results = PublishOrchestrator(settings).publish_all(
+        video, PublishMeta(title="t", caption="c")
+    )
+    assert results
+    assert all(r.status in ("ok", "skipped", "failed") for r in results)
+    # Without keys — skipped, not crash
+    by = {r.platform: r for r in results}
+    assert by["vk_video"].status == "skipped"
+    assert by["instagram_reels"].status == "skipped"
+    assert by["max_channel"].status == "skipped"
+    assert by["max_stories"].status == "skipped"
+    assert by["tiktok"].status == "skipped"
+    assert (tmp_path / "data" / "publish_state.json").is_file()
+
+
+def test_publish_once_trigger_exists() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert (root / "scripts" / "check_publish_once.sh").is_file()
+    assert (root / "triggers" / "publish-once.id").is_file()
+
+
 def test_author_nudge_welcome_once(tmp_path: Path) -> None:
     from src.author_nudge import CHANNEL_URL, DM_URL, maybe_welcome, note_successful_run
 

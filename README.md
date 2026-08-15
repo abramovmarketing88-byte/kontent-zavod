@@ -194,6 +194,34 @@ sudo systemctl enable --now kontent-zavod
 journalctl -u kontent-zavod -f
 ```
 
+## Multi-platform publish (понедельник: вписать ключи)
+
+После рендера `PublishOrchestrator` шлёт ролик на включённые площадки.
+
+| Площадка | Флаг | Ключи в `.env` |
+|----------|------|----------------|
+| Telegram DM | `TELEGRAM_NOTIFY` / `PUBLISH_TELEGRAM_DM` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID` |
+| YouTube Shorts | `PUBLISH_YOUTUBE` или `YOUTUBE_UPLOAD` | OAuth `YOUTUBE_CLIENT_*` + `REFRESH_TOKEN` |
+| Telegram Stories | `PUBLISH_TELEGRAM_STORY` | Business + `TELEGRAM_BUSINESS_CONNECTION_ID` |
+| VK видео | `PUBLISH_VK` | `VK_ACCESS_TOKEN`, `VK_GROUP_ID` |
+| Instagram Reels | `PUBLISH_INSTAGRAM` | `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_USER_ID` (+ опц. `INSTAGRAM_PUBLIC_BASE_URL`) |
+| MAX канал | `PUBLISH_MAX` | `MAX_BOT_TOKEN`, `MAX_CHAT_ID` |
+| MAX stories | `PUBLISH_MAX_STORIES` | stub — API stories пока нет |
+| TikTok | `PUBLISH_TIKTOK` | `TIKTOK_ACCESS_TOKEN` (inbox upload) |
+
+Без ключей адаптер пишет `⏭ skipped`, пайплайн не падает.
+
+Разовая выгрузка последнего ролика:
+
+```bash
+printf '%s\n' "manual-$(date -u +%Y%m%dT%H%M%SZ)" > triggers/publish-once.id
+bash scripts/auto_update.sh
+# или
+docker compose run --rm worker python -m src.publish.orchestrator
+```
+
+По платформам: `python -m src.publish.vk|instagram|max_messenger|tiktok`.
+
 ## Telegram Business Stories
 
 Бот-ассистент на Business может постить сторис через `postStory` (нужно право `can_manage_stories`).

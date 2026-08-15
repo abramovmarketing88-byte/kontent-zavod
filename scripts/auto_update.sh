@@ -20,3 +20,5 @@ echo "$(date -Is) updated to $(git rev-parse --short HEAD)" >> logs/update.log
 /opt/kontent-zavod/scripts/check_youtube_upload.sh || true
 # New triggers/telegram-story-once.id → post newest output/*.mp4 as Business story
 /opt/kontent-zavod/scripts/check_telegram_story.sh || true
+# New triggers/publish-once.id → multi-platform publish of newest output/*.mp4
+/opt/kontent-zavod/scripts/check_publish_once.sh || true

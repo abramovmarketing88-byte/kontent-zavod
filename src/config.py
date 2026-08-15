@@ -83,6 +83,33 @@ class Settings:
     telegram_story_upload: bool = False
     telegram_story_active_period: int = 86400
 
+    # Multi-platform publish flags (aliases keep YOUTUBE_UPLOAD / TELEGRAM_STORY_UPLOAD)
+    publish_enabled: bool = True
+    publish_telegram_dm: bool = True
+    publish_youtube: bool = False
+    publish_telegram_story: bool = False
+    publish_vk: bool = False
+    publish_instagram: bool = False
+    publish_max: bool = False
+    publish_max_stories: bool = False
+    publish_tiktok: bool = False
+
+    vk_access_token: str = ""
+    vk_group_id: str = ""
+    vk_api_version: str = "5.199"
+
+    instagram_access_token: str = ""
+    instagram_user_id: str = ""
+    instagram_public_base_url: str = ""
+
+    max_bot_token: str = ""
+    max_chat_id: str = ""
+
+    tiktok_client_key: str = ""
+    tiktok_client_secret: str = ""
+    tiktok_access_token: str = ""
+    tiktok_open_id: str = ""
+
 
 def _load_llm_settings() -> tuple[str, str | None, str]:
     """Resolve fallback LLM: OpenRouter or OpenAI-compatible API."""
@@ -100,6 +127,10 @@ def _load_llm_settings() -> tuple[str, str | None, str]:
         or ("openai/gpt-4o-mini" if llm_base_url else "gpt-4o-mini")
     )
     return llm_api_key, llm_base_url, llm_model
+
+
+def _env_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).lower() in ("1", "true", "yes")
 
 
 def load_settings() -> Settings:
@@ -128,6 +159,20 @@ def load_settings() -> Settings:
 
     llm_api_key, llm_base_url, llm_model = _load_llm_settings()
 
+    telegram_notify = _env_bool("TELEGRAM_NOTIFY", "false")
+    youtube_upload = _env_bool("YOUTUBE_UPLOAD", "false")
+    telegram_story_upload = _env_bool("TELEGRAM_STORY_UPLOAD", "false")
+
+    if os.getenv("PUBLISH_TELEGRAM_DM") is None:
+        publish_telegram_dm = telegram_notify
+    else:
+        publish_telegram_dm = _env_bool("PUBLISH_TELEGRAM_DM", "true")
+
+    publish_youtube = _env_bool("PUBLISH_YOUTUBE", "false") or youtube_upload
+    publish_telegram_story = (
+        _env_bool("PUBLISH_TELEGRAM_STORY", "false") or telegram_story_upload
+    )
+
     return Settings(
         root=root,
         data_dir=root / "data",
@@ -144,18 +189,37 @@ def load_settings() -> Settings:
         youtube_client_id=os.getenv("YOUTUBE_CLIENT_ID", ""),
         youtube_client_secret=os.getenv("YOUTUBE_CLIENT_SECRET", ""),
         youtube_refresh_token=os.getenv("YOUTUBE_REFRESH_TOKEN", ""),
-        youtube_upload=os.getenv("YOUTUBE_UPLOAD", "false").lower()
-        in ("1", "true", "yes"),
+        youtube_upload=youtube_upload or publish_youtube,
         youtube_privacy=os.getenv("YOUTUBE_PRIVACY", "public"),
         youtube_category_id=os.getenv("YOUTUBE_CATEGORY_ID", "22"),
         telegram_business_connection_id=os.getenv(
             "TELEGRAM_BUSINESS_CONNECTION_ID", ""
         ).strip(),
-        telegram_story_upload=os.getenv("TELEGRAM_STORY_UPLOAD", "false").lower()
-        in ("1", "true", "yes"),
+        telegram_story_upload=telegram_story_upload or publish_telegram_story,
         telegram_story_active_period=int(
             os.getenv("TELEGRAM_STORY_ACTIVE_PERIOD", "86400")
         ),
+        publish_enabled=_env_bool("PUBLISH_ENABLED", "true"),
+        publish_telegram_dm=publish_telegram_dm,
+        publish_youtube=publish_youtube,
+        publish_telegram_story=publish_telegram_story,
+        publish_vk=_env_bool("PUBLISH_VK", "false"),
+        publish_instagram=_env_bool("PUBLISH_INSTAGRAM", "false"),
+        publish_max=_env_bool("PUBLISH_MAX", "false"),
+        publish_max_stories=_env_bool("PUBLISH_MAX_STORIES", "false"),
+        publish_tiktok=_env_bool("PUBLISH_TIKTOK", "false"),
+        vk_access_token=os.getenv("VK_ACCESS_TOKEN", ""),
+        vk_group_id=os.getenv("VK_GROUP_ID", "").strip(),
+        vk_api_version=os.getenv("VK_API_VERSION", "5.199"),
+        instagram_access_token=os.getenv("INSTAGRAM_ACCESS_TOKEN", ""),
+        instagram_user_id=os.getenv("INSTAGRAM_USER_ID", ""),
+        instagram_public_base_url=os.getenv("INSTAGRAM_PUBLIC_BASE_URL", "").rstrip("/"),
+        max_bot_token=os.getenv("MAX_BOT_TOKEN", ""),
+        max_chat_id=os.getenv("MAX_CHAT_ID", "").strip(),
+        tiktok_client_key=os.getenv("TIKTOK_CLIENT_KEY", ""),
+        tiktok_client_secret=os.getenv("TIKTOK_CLIENT_SECRET", ""),
+        tiktok_access_token=os.getenv("TIKTOK_ACCESS_TOKEN", ""),
+        tiktok_open_id=os.getenv("TIKTOK_OPEN_ID", ""),
         pexels_api_key=os.getenv("PEXELS_API_KEY", ""),
         llm_api_key=llm_api_key,
         llm_base_url=llm_base_url,
@@ -166,8 +230,7 @@ def load_settings() -> Settings:
         renderer=os.getenv("RENDERER", "faceless"),
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_owner_chat_id=os.getenv("TELEGRAM_OWNER_CHAT_ID", ""),
-        telegram_notify=os.getenv("TELEGRAM_NOTIFY", "false").lower()
-        in ("1", "true", "yes"),
+        telegram_notify=telegram_notify,
         max_videos_per_run=int(os.getenv("MAX_VIDEOS_PER_RUN", "1")),
         schedule_hours=int(os.getenv("SCHEDULE_HOURS", "6")),
         daily_at=os.getenv("DAILY_AT", "09:00"),

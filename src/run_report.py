@@ -102,6 +102,7 @@ class RunReport:
     processed: int = 0
     started_at: str = field(default_factory=_utc_now)
     finished_at: str = ""
+    publish_results: list[dict[str, Any]] = field(default_factory=list)
     _file_handler: logging.Handler | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -195,6 +196,24 @@ class RunReport:
             "has_telegram_chat": bool(s.telegram_owner_chat_id),
             "telegram_story_upload": bool(s.telegram_story_upload),
             "has_telegram_business_connection": bool(s.telegram_business_connection_id),
+            "publish_enabled": bool(getattr(s, "publish_enabled", True)),
+            "publish_flags": {
+                "telegram_dm": bool(getattr(s, "publish_telegram_dm", False)),
+                "youtube": bool(getattr(s, "publish_youtube", False)),
+                "telegram_story": bool(getattr(s, "publish_telegram_story", False)),
+                "vk": bool(getattr(s, "publish_vk", False)),
+                "instagram": bool(getattr(s, "publish_instagram", False)),
+                "max": bool(getattr(s, "publish_max", False)),
+                "max_stories": bool(getattr(s, "publish_max_stories", False)),
+                "tiktok": bool(getattr(s, "publish_tiktok", False)),
+            },
+            "has_vk": bool(getattr(s, "vk_access_token", "") and getattr(s, "vk_group_id", "")),
+            "has_instagram_publish": bool(
+                getattr(s, "instagram_access_token", "")
+                and getattr(s, "instagram_user_id", "")
+            ),
+            "has_max": bool(getattr(s, "max_bot_token", "") and getattr(s, "max_chat_id", "")),
+            "has_tiktok": bool(getattr(s, "tiktok_access_token", "")),
             "llm_model": s.llm_model,
             "llm_base_url": s.llm_base_url,
             "niche_queries": list(s.niche.search_queries),
@@ -220,6 +239,7 @@ class RunReport:
             "stages": self.stages,
             "sources": self.sources,
             "errors": self.errors,
+            "publish_results": self.publish_results,
             "settings": self._settings_snapshot(),
             "log_file": str(self.log_file),
         }
@@ -265,6 +285,17 @@ class RunReport:
             lines.append("```")
             lines.extend(d["errors"])
             lines.append("```")
+        else:
+            lines.append("- (none)")
+
+        lines.extend(["", "## Publish"])
+        pubs = d.get("publish_results") or self.publish_results
+        if pubs:
+            for p in pubs:
+                status = p.get("status", "?")
+                plat = p.get("platform", "?")
+                extra = p.get("url") or p.get("error") or ""
+                lines.append(f"- **{plat}**: {status}" + (f" — {extra}" if extra else ""))
         else:
             lines.append("- (none)")
 

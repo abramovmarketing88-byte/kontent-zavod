@@ -6,6 +6,7 @@ Always inspect these before guessing:
 2. `reports/last-10.md` — index of the last 10 iterations
 3. `reports/history/<run_id>.md` — full report for a past run
 4. `reports/diagnose.md` — VPS health (if present)
+5. `data/publish_state.json` — last multi-platform publish statuses
 
 On GitHub (after VPS publish):
 
