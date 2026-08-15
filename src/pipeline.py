@@ -479,9 +479,6 @@ def main() -> None:
             logger.exception("Pipeline --once failed: %s", exc)
             _notify_run_crash(settings, exc, report)
             sys.exit(1)
-        if count > 0:
-            # note_successful_run already called inside pipeline.run_once
-            pass
         logger.info("Done. Processed %d video(s).", count)
         sys.exit(0)
 
