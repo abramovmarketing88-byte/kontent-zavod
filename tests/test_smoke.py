@@ -290,7 +290,35 @@ def test_pexels_placeholder_without_key(tmp_path: Path) -> None:
     assert paths[0].stat().st_size > 1000
 
 
-def test_normalize_filters_force_square_pixels() -> None:
+def test_youtube_shorts_markers_and_latest(tmp_path: Path) -> None:
+    from src.publish.youtube import ensure_shorts_markers, find_latest_output_video
+
+    title, desc = ensure_shorts_markers("Тест ролик", "Описание без тега")
+    assert "#Shorts" in title or "#shorts" in title.lower()
+    assert "#Shorts" in desc or "#shorts" in desc.lower()
+
+    out = tmp_path / "output" / "2026-08-15"
+    out.mkdir(parents=True)
+    older = out / "old.mp4"
+    newer = out / "new.mp4"
+    older.write_bytes(b"0" * 20_000)
+    newer.write_bytes(b"1" * 20_000)
+    import os
+    import time
+
+    os.utime(older, (time.time() - 100, time.time() - 100))
+    os.utime(newer, (time.time(), time.time()))
+    assert find_latest_output_video(tmp_path / "output") == newer
+
+
+def test_youtube_upload_script_exists() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert (root / "scripts" / "check_youtube_upload.sh").is_file()
+    assert (root / "triggers" / "youtube-upload-once.id").is_file()
+    from src.publish import youtube as yt
+
+    assert "youtube.upload" in yt.YOUTUBE_UPLOAD_SCOPE
+
     from src.assemble import ffmpeg as ff
 
     import inspect

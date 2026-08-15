@@ -16,3 +16,5 @@ docker compose build worker
 echo "$(date -Is) updated to $(git rev-parse --short HEAD)" >> logs/update.log
 # New triggers/run-once.id (label run-now / Actions / merge) → one video to Telegram
 /opt/kontent-zavod/scripts/check_run_once.sh || true
+# New triggers/youtube-upload-once.id → upload newest output/*.mp4 as YouTube Short
+/opt/kontent-zavod/scripts/check_youtube_upload.sh || true

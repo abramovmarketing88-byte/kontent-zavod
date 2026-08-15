@@ -178,6 +178,33 @@ sudo systemctl enable --now kontent-zavod
 journalctl -u kontent-zavod -f
 ```
 
+## YouTube Shorts (выгрузка)
+
+`YOUTUBE_API_KEY` — только **поиск**. Чтобы **залить** Short, нужен OAuth:
+
+```env
+YOUTUBE_CLIENT_ID=....apps.googleusercontent.com
+YOUTUBE_CLIENT_SECRET=...
+YOUTUBE_REFRESH_TOKEN=...
+YOUTUBE_UPLOAD=true
+YOUTUBE_PRIVACY=public
+```
+
+Scope: `https://www.googleapis.com/auth/youtube.upload`  
+(Google Cloud → OAuth Desktop client → [OAuth Playground](https://developers.google.com/oauthplayground/) → получить refresh_token).
+
+Разовый апдейт последнего ролика из `output/`:
+
+```bash
+# на VPS после git pull
+printf '%s\n' "manual-$(date -u +%Y%m%dT%H%M%SZ)" > triggers/youtube-upload-once.id
+bash scripts/auto_update.sh
+# или сразу:
+docker compose run --rm --no-deps worker python -m src.publish.youtube
+```
+
+Если `YOUTUBE_UPLOAD=true`, каждый успешный прогон сам льёт Short после Telegram.
+
 ### 5. Откуда берутся ролики
 
 1. **Автопоиск** — `config/niche.yaml` (YouTube Shorts по запросам)

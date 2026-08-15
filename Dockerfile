@@ -13,9 +13,11 @@ COPY src ./src
 COPY brand ./brand
 COPY config ./config
 COPY inbox ./inbox
+COPY scripts ./scripts
 COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
 
 RUN chmod +x /docker-entrypoint.sh \
+    && find scripts -name '*.sh' -exec chmod +x {} + \
     && pip install --no-cache-dir . \
     && pip install --no-cache-dir -U "yt-dlp>=2024.8.0"
 

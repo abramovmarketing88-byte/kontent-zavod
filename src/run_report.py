@@ -182,6 +182,11 @@ class RunReport:
             "has_cursor_key": bool(s.cursor_api_key),
             "has_elevenlabs_key": bool(s.elevenlabs_api_key),
             "has_youtube_key": bool(s.youtube_api_key),
+            "has_youtube_oauth": bool(
+                s.youtube_client_id and s.youtube_client_secret and s.youtube_refresh_token
+            ),
+            "youtube_upload": bool(s.youtube_upload),
+            "youtube_privacy": s.youtube_privacy,
             "has_pexels_key": bool(s.pexels_api_key),
             "has_llm_key": bool(s.llm_api_key),
             "has_heygen_key": bool(s.heygen_api_key),

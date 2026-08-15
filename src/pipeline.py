@@ -238,6 +238,39 @@ class Pipeline:
             self.db.update_status(meta.source_id, JobStatus.PUBLISHED)
             logger.info("Sent to Telegram DM: %s", self.settings.telegram_owner_chat_id)
 
+        if self.settings.youtube_upload:
+            self._publish_youtube(dest_video, remake, report)
+
+    def _publish_youtube(self, dest_video, remake, report) -> None:
+        from src.publish.youtube import YouTubeUploadError, YouTubeUploader
+
+        if report:
+            report.stage("youtube_publish", str(dest_video))
+        try:
+            uploader = YouTubeUploader(
+                client_id=self.settings.youtube_client_id,
+                client_secret=self.settings.youtube_client_secret,
+                refresh_token=self.settings.youtube_refresh_token,
+                privacy=self.settings.youtube_privacy,
+                category_id=self.settings.youtube_category_id,
+            )
+            tags = [h.lstrip("#") for h in (remake.hashtags or []) if h]
+            result = uploader.upload_short(
+                dest_video,
+                title=remake.title or remake.hook or dest_video.stem,
+                description=(
+                    f"{remake.caption}\n\n" + " ".join(remake.hashtags or [])
+                ).strip(),
+                tags=tags,
+            )
+            self._tg(f"✅ YouTube Short\n{result['title']}\n{result['url']}")
+            logger.info("YouTube Short: %s", result["url"])
+        except YouTubeUploadError as exc:
+            logger.exception("YouTube upload failed: %s", exc)
+            if report:
+                report.errors.append(f"youtube_upload: {exc}")
+            self._tg(f"❌ YouTube Short upload failed\n{exc}")
+
     def _ensure_target_duration(self, path, meta, transcript, remake, voice_result):
         min_sec = self.settings.target_duration_min
         max_sec = self.settings.target_duration_max

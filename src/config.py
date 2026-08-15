@@ -70,6 +70,14 @@ class Settings:
     niche: NicheConfig
     instagram: InstagramNicheConfig
 
+    # Optional YouTube Shorts upload (OAuth — not the Data API key)
+    youtube_client_id: str = ""
+    youtube_client_secret: str = ""
+    youtube_refresh_token: str = ""
+    youtube_upload: bool = False
+    youtube_privacy: str = "public"
+    youtube_category_id: str = "22"
+
 
 def _load_llm_settings() -> tuple[str, str | None, str]:
     """Resolve fallback LLM: OpenRouter or OpenAI-compatible API."""
@@ -128,6 +136,13 @@ def load_settings() -> Settings:
         elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY", ""),
         elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID", ""),
         youtube_api_key=os.getenv("YOUTUBE_API_KEY", ""),
+        youtube_client_id=os.getenv("YOUTUBE_CLIENT_ID", ""),
+        youtube_client_secret=os.getenv("YOUTUBE_CLIENT_SECRET", ""),
+        youtube_refresh_token=os.getenv("YOUTUBE_REFRESH_TOKEN", ""),
+        youtube_upload=os.getenv("YOUTUBE_UPLOAD", "false").lower()
+        in ("1", "true", "yes"),
+        youtube_privacy=os.getenv("YOUTUBE_PRIVACY", "public"),
+        youtube_category_id=os.getenv("YOUTUBE_CATEGORY_ID", "22"),
         pexels_api_key=os.getenv("PEXELS_API_KEY", ""),
         llm_api_key=llm_api_key,
         llm_base_url=llm_base_url,
