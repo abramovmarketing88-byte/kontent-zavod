@@ -36,7 +36,9 @@ class Analyzer:
         if not audio_path.exists():
             self._download_audio(meta.url, audio_path)
 
-        transcript = transcribe_audio(self.settings, audio_path)
+        transcript = transcribe_audio(
+            self.settings, audio_path, source_url=meta.url
+        )
         logger.info(
             "Transcribed %s (%d chars, backend=%s)",
             meta.source_id,
