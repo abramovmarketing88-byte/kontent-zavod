@@ -1,4 +1,4 @@
-name: CI
+name: Deploy to debian-home
 
 on:
   push:
@@ -6,11 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  deploy:
+    runs-on: [self-hosted, linux, debian-home]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -e ".[dev]" && pytest -q
+      - name: Pull main and rebuild on server
+        run: sudo bash /opt/kontent-zavod/scripts/auto_update.sh

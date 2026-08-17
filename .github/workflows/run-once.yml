@@ -57,5 +57,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: '⏳ Разовый заказ принят. Сервер подтянет `main` (до 15 мин), найдёт залетевший Reels и пришлёт ролик в Telegram.',
+              body: '⏳ Разовый заказ принят. Сервер подтянет `main` сразу (self-hosted runner) или в течение 5 мин (cron) и пришлёт ролик в Telegram.',
             });
