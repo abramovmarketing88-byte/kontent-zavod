@@ -82,6 +82,7 @@ class Settings:
     telegram_business_connection_id: str = ""
     telegram_story_upload: bool = False
     telegram_story_active_period: int = 86400
+    telegram_topic_intake: bool = True
 
     # Multi-platform publish flags (aliases keep YOUTUBE_UPLOAD / TELEGRAM_STORY_UPLOAD)
     publish_enabled: bool = True
@@ -198,6 +199,10 @@ def load_settings() -> Settings:
         telegram_story_upload=telegram_story_upload or publish_telegram_story,
         telegram_story_active_period=int(
             os.getenv("TELEGRAM_STORY_ACTIVE_PERIOD", "86400")
+        ),
+        telegram_topic_intake=_env_bool(
+            "TELEGRAM_TOPIC_INTAKE",
+            "true" if telegram_notify else "false",
         ),
         publish_enabled=_env_bool("PUBLISH_ENABLED", "true"),
         publish_telegram_dm=publish_telegram_dm,

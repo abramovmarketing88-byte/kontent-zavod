@@ -14,6 +14,8 @@ sed -i 's/\r$//' scripts/*.sh
 chmod +x scripts/*.sh
 docker compose build worker
 echo "$(date -Is) updated to $(git rev-parse --short HEAD)" >> logs/update.log
+# Owner text/voice in Telegram → inbox/topic.txt + run-once
+/opt/kontent-zavod/scripts/check_telegram_topic.sh || true
 # New triggers/run-once.id (label run-now / Actions / merge) → one video to Telegram
 /opt/kontent-zavod/scripts/check_run_once.sh || true
 # New triggers/youtube-upload-once.id → upload newest output/*.mp4 as YouTube Short

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -29,17 +30,28 @@ class TopicDiscoverer:
         if not self.topic_file.exists():
             return []
         raw = self.topic_file.read_text(encoding="utf-8")
-        lines = [
-            ln.strip()
-            for ln in raw.splitlines()
-            if ln.strip() and not ln.strip().startswith("#")
-        ]
+        run_id: str | None = None
+        lines: list[str] = []
+        for ln in raw.splitlines():
+            s = ln.strip()
+            if not s:
+                continue
+            if s.startswith("#run:"):
+                run_id = s.split(":", 1)[1].strip() or None
+                continue
+            if s.startswith("#"):
+                continue
+            lines.append(s)
         text = "\n".join(lines).strip()
         if not text:
             return []
 
         digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:10]
-        source_id = f"topic_{digest}"
+        if run_id:
+            safe = re.sub(r"[^a-zA-Z0-9_-]", "", run_id)[:12]
+            source_id = f"topic_{digest}_{safe}" if safe else f"topic_{digest}"
+        else:
+            source_id = f"topic_{digest}"
         if self.db.should_skip_discovery(source_id):
             logger.info("Topic already processed: %s", source_id)
             return []
