@@ -534,6 +534,160 @@ def test_topic_discoverer_queues_brief(tmp_path: Path) -> None:
     assert (inbox / "topic.txt").read_text(encoding="utf-8").strip() == ""
 
 
+def test_topic_discoverer_run_id(tmp_path: Path) -> None:
+    from src.config import InstagramNicheConfig, NicheConfig, Settings
+    from src.db import Database
+    from src.discover.topic import TopicDiscoverer
+
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "topic.txt").write_text(
+        "#run:abc123\n#telegram\nТема из бота\nТело\n",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        root=tmp_path,
+        data_dir=tmp_path / "data",
+        jobs_dir=tmp_path / "jobs",
+        output_dir=tmp_path / "output",
+        inbox_dir=inbox,
+        brand_dir=tmp_path / "brand",
+        config_dir=tmp_path / "config",
+        db_path=tmp_path / "data" / "factory.db",
+        cursor_api_key="",
+        elevenlabs_api_key="",
+        elevenlabs_voice_id="",
+        youtube_api_key="",
+        pexels_api_key="",
+        llm_api_key="",
+        llm_base_url=None,
+        llm_model="gpt-4o-mini",
+        heygen_api_key="",
+        heygen_avatar_id="",
+        heygen_intro_sec=8.0,
+        renderer="faceless",
+        telegram_bot_token="",
+        telegram_owner_chat_id="",
+        telegram_notify=False,
+        max_videos_per_run=1,
+        schedule_hours=6,
+        daily_at="09:00",
+        schedule_tz="Europe/Moscow",
+        whisper_model="base",
+        transcribe_backend="faster_whisper",
+        target_duration_min=30.0,
+        target_duration_max=40.0,
+        niche=NicheConfig(),
+        instagram=InstagramNicheConfig(),
+    )
+    db = Database(settings.db_path)
+    found = TopicDiscoverer(settings, db).discover()
+    assert len(found) == 1
+    assert found[0].source_id.endswith("_abc123")
+
+
+def test_telegram_topic_intake_helpers() -> None:
+    from src.config import InstagramNicheConfig, NicheConfig, Settings
+    from src.telegram.topic_intake import (
+        build_topic_file,
+        format_topic_brief,
+        parse_topic_text,
+        queue_topic,
+    )
+
+    assert parse_topic_text("/topic нейросети для бизнеса") == "нейросети для бизнеса"
+    assert parse_topic_text("/help") is None
+    assert parse_topic_text("просто тема") == "просто тема"
+
+    brief = format_topic_brief("у жизни нет черновика")
+    assert brief.startswith("У жизни нет черновика")
+    assert "проанализируй интернет" in brief
+
+    file_text = build_topic_file("тест", run_id="deadbeef")
+    assert "#run:deadbeef" in file_text
+    assert "#telegram" in file_text
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        settings = Settings(
+            root=root,
+            data_dir=root / "data",
+            jobs_dir=root / "jobs",
+            output_dir=root / "output",
+            inbox_dir=root / "inbox",
+            brand_dir=root / "brand",
+            config_dir=root / "config",
+            db_path=root / "data" / "factory.db",
+            cursor_api_key="",
+            elevenlabs_api_key="",
+            elevenlabs_voice_id="",
+            youtube_api_key="",
+            pexels_api_key="",
+            llm_api_key="",
+            llm_base_url=None,
+            llm_model="gpt-4o-mini",
+            heygen_api_key="",
+            heygen_avatar_id="",
+            heygen_intro_sec=8.0,
+            renderer="faceless",
+            telegram_bot_token="",
+            telegram_owner_chat_id="",
+            telegram_notify=False,
+            max_videos_per_run=1,
+            schedule_hours=6,
+            daily_at="09:00",
+            schedule_tz="Europe/Moscow",
+            whisper_model="base",
+            transcribe_backend="faster_whisper",
+            target_duration_min=30.0,
+            target_duration_max=40.0,
+            niche=NicheConfig(),
+            instagram=InstagramNicheConfig(),
+        )
+        run_id, trigger_id = queue_topic(settings, "у жизни нет черновика")
+        assert len(run_id) == 12
+        assert (root / "inbox" / "topic.txt").exists()
+        assert (root / "triggers" / "run-once.id").read_text().strip() == trigger_id
+
+
+def test_broll_query_enhancement() -> None:
+    from src.research.topic_research import topic_allows_global_cast
+    from src.visuals.broll_query import enhance_broll_query, query_variants
+
+    q = enhance_broll_query(["office", "team meeting"], topic="авито реклама", shot_index=0)
+    assert "dynamic" in q.lower()
+    assert "european" in q.lower() or "slavic" in q.lower()
+    assert "african" not in q.lower()
+
+    assert not topic_allows_global_cast("нейросети для бизнеса")
+    assert topic_allows_global_cast("история hip hop культуры")
+
+    variants = query_variants(q, topic="авито")
+    assert len(variants) >= 2
+
+
+def test_research_fallback_summary() -> None:
+    from src.research.topic_research import TopicResearcher
+
+    summary = TopicResearcher._fallback_summary(
+        "Авито и нейросети",
+        {"youtube": ["Short 1 (Channel)"], "web": ["Факт про объявления"]},
+    )
+    assert "Авито" in summary
+    assert "Short 1" in summary
+
+
+def test_check_telegram_topic_script_exists() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts" / "check_telegram_topic.sh"
+    assert script.is_file()
+    text = script.read_text(encoding="utf-8")
+    assert "topic_intake" in text
+    assert "check_telegram_topic" in (root / "scripts" / "auto_update.sh").read_text(
+        encoding="utf-8"
+    )
+
+
 def test_diagnose_and_entrypoint_scripts_exist() -> None:
     root = Path(__file__).resolve().parents[1]
     assert (root / "scripts" / "diagnose.sh").is_file()

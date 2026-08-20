@@ -23,6 +23,7 @@ else
   echo "$(date -Is) already $(git rev-parse --short HEAD)" >> logs/update.log
 fi
 
+/opt/kontent-zavod/scripts/check_telegram_topic.sh || true
 /opt/kontent-zavod/scripts/check_run_once.sh || true
 /opt/kontent-zavod/scripts/check_youtube_upload.sh || true
 /opt/kontent-zavod/scripts/check_telegram_story.sh || true

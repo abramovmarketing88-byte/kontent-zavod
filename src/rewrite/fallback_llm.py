@@ -24,6 +24,15 @@ REMAKE_SCHEMA = """
 }
 """
 
+BROLL_RULES = """
+B-roll (shots.keywords) для Pexels:
+- Ключевые слова на АНГЛИЙСКОМ.
+- Динамика: fast motion, handheld, timelapse, action.
+- Люди/офис: european, slavic, russian, eastern europe — визуал близкий к RU.
+- НЕ добавляй african/black/afro в keywords, если тема явно не про это.
+- 4–6 шотов, 2–4 сек, смена планов.
+"""
+
 
 class FallbackRewriter:
     def __init__(self, settings: Settings) -> None:
@@ -49,6 +58,7 @@ class FallbackRewriter:
         meta: SourceMeta,
         transcript: TranscriptResult,
         duration_hint: str | None = None,
+        research_context: str | None = None,
     ) -> RemakeSpec:
         if not self.client:
             raise RuntimeError(
@@ -56,22 +66,29 @@ class FallbackRewriter:
             )
 
         hint_block = f"\n\n## Дополнительное требование\n{duration_hint}\n" if duration_hint else ""
+        research_block = ""
+        if research_context:
+            research_block = f"""
+## Ресёрч из интернета
+{research_context}
+"""
 
         if meta.platform == "topic":
             user_prompt = f"""
-Прочитай бренд-бриф и ТЕМУ. Создай ОРИГИНАЛЬНЫЙ сценарий для faceless Reels с нуля.
-Это не ремейк чужого ролика — пиши сам по теме.
+Прочитай бренд-бриф, РЕСЁРЧ и ТЕМУ. Создай ОРИГИНАЛЬНЫЙ вирусный сценарий для faceless Reels с нуля.
+Опирайся на ресёрч — факты, тренды, боль аудитории. Это не ремейк чужого ролика.
 Длина озвучки: строго 30–40 секунд (~75–100 слов).
 
 ## Бренд-бриф
 {brand_prompt}
-
+{research_block}
 ## Тема
 {meta.title}
 
 ## Развёрнутое ТЗ / идея
 {transcript.text or "(пусто)"}
 {hint_block}
+{BROLL_RULES}
 Верни ТОЛЬКО валидный JSON без markdown по схеме:
 {REMAKE_SCHEMA}
 """
@@ -93,6 +110,7 @@ class FallbackRewriter:
 ## Транскрипт исходника
 {transcript.text or "(пусто — придумай по названию)"}
 {hint_block}
+{BROLL_RULES}
 Верни ТОЛЬКО валидный JSON без markdown по схеме:
 {REMAKE_SCHEMA}
 """

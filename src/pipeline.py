@@ -32,6 +32,7 @@ from src.publish.telegram import (
     send_message,
     send_source_breakdown,
 )
+from src.research.topic_research import TopicResearcher
 from src.renderers.factory import get_renderer
 from src.rewrite.cursor_rewriter import CursorRewriter
 from src.run_report import RunReport, install_redact_logging
@@ -55,6 +56,7 @@ class Pipeline:
         self.rewriter = CursorRewriter(settings)
         self.voice = ElevenLabsVoice(settings)
         self.pexels = PexelsClient(settings)
+        self.researcher = TopicResearcher(settings)
         self.renderer = get_renderer(settings)
 
     @property
@@ -108,7 +110,8 @@ class Pipeline:
             self._tg(
                 "⚠️ Разовый заказ: новых залетевших Reels не нашёл "
                 "(все уже в базе или ниже порога просмотров).\n"
-                "Кинь ссылку в inbox/urls.txt или подними min_views / дождись свежих."
+                "Кинь тему в Telegram боту, ссылку в inbox/urls.txt "
+                "или подними min_views / дождись свежих."
             )
             return 0
 
@@ -161,6 +164,7 @@ class Pipeline:
         if report:
             report.stage("analyze", meta.source_id)
 
+        research_context: str | None = None
         if meta.platform == "topic":
             # Freeform idea — no download / whisper
             from src.discover.topic import topic_brief_path
@@ -179,6 +183,24 @@ class Pipeline:
             if self.settings.telegram_notify:
                 # topic_text already starts with the title line — don't repeat it
                 self._tg(f"🧠 Тема без исходника\n\n{topic_text[:1800]}")
+
+            if report:
+                report.stage("research", meta.source_id)
+            try:
+                research = self.researcher.gather(path, meta, topic_text)
+                research_context = research.prompt_block()
+                if self.settings.telegram_notify and research.summary:
+                    preview = research.summary[:1200]
+                    angles = ""
+                    if research.viral_angles:
+                        angles = "\n\nУглы:\n" + "\n".join(
+                            f"• {a}" for a in research.viral_angles[:5]
+                        )
+                    self._tg(f"🔎 Ресёрч по теме\n\n{preview}{angles}")
+            except Exception as exc:
+                logger.warning("Topic research failed: %s", exc)
+                if self.settings.telegram_notify:
+                    self._tg(f"⚠️ Ресёрч не удался ({exc}) — пишу сценарий по теме.")
         else:
             transcript = self.analyzer.analyze(path, meta)
             write_transcript(path, transcript)
@@ -198,7 +220,9 @@ class Pipeline:
 
         if report:
             report.stage("rewrite", meta.source_id)
-        remake = self.rewriter.rewrite(path, meta, transcript)
+        remake = self.rewriter.rewrite(
+            path, meta, transcript, research_context=research_context
+        )
         write_remake(path, remake)
         self.db.update_status(meta.source_id, JobStatus.REWRITTEN)
 
@@ -206,7 +230,7 @@ class Pipeline:
             report.stage("voice", meta.source_id)
         voice_result = self.voice.synthesize(path, remake)
         voice_result = self._ensure_target_duration(
-            path, meta, transcript, remake, voice_result
+            path, meta, transcript, remake, voice_result, research_context=research_context
         )
         self.db.update_status(meta.source_id, JobStatus.VOICED)
 
@@ -214,7 +238,11 @@ class Pipeline:
         if self.settings.renderer.lower() in ("faceless", "hybrid"):
             if report:
                 report.stage("pexels", meta.source_id)
-            shot_clips = self.pexels.download_shots(path, remake)
+            shot_clips = self.pexels.download_shots(
+                path,
+                remake,
+                topic=meta.title if meta.platform == "topic" else "",
+            )
 
         if report:
             report.stage("render", f"{self.settings.renderer}:{meta.source_id}")
@@ -249,7 +277,9 @@ class Pipeline:
         elif any(r.status == "ok" for r in results):
             self.db.update_status(meta.source_id, JobStatus.PUBLISHED)
 
-    def _ensure_target_duration(self, path, meta, transcript, remake, voice_result):
+    def _ensure_target_duration(
+        self, path, meta, transcript, remake, voice_result, *, research_context=None
+    ):
         min_sec = self.settings.target_duration_min
         max_sec = self.settings.target_duration_max
         duration = voice_result.duration_sec
@@ -276,7 +306,9 @@ class Pipeline:
             min_sec,
             max_sec,
         )
-        remake = self.rewriter.rewrite(path, meta, transcript, duration_hint=hint)
+        remake = self.rewriter.rewrite(
+            path, meta, transcript, duration_hint=hint, research_context=research_context
+        )
         write_remake(path, remake)
         self.db.update_status(meta.source_id, JobStatus.REWRITTEN)
         return self.voice.synthesize(path, remake)

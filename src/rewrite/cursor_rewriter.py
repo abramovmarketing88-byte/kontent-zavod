@@ -13,7 +13,16 @@ from src.rewrite.fallback_llm import FallbackRewriter, _parse_remake
 
 logger = logging.getLogger(__name__)
 
-REMAKE_SCHEMA = """
+BROLL_RULES = """
+## B-roll (shots.keywords) — для Pexels
+- Ключевые слова на АНГЛИЙСКОМ (Pexels ищет по EN).
+- Динамика: fast motion, handheld, timelapse, action, walking, typing, city rush.
+- Люди/офис: european, slavic, russian, eastern europe, moscow — визуал близкий к RU аудитории.
+- НЕ добавляй african/black/afro/caribbean в keywords, если тема явно не про это.
+- 4–6 шотов, 2–4 сек каждый, смена планов (крупный → общий → действие).
+"""
+
+
 {
   "hook": "string",
   "script": "string",
@@ -36,6 +45,7 @@ class CursorRewriter:
         meta: SourceMeta,
         transcript: TranscriptResult,
         duration_hint: str | None = None,
+        research_context: str | None = None,
     ) -> RemakeSpec:
         remake_path = job_path / "remake.json"
         brand_prompt = (self.settings.brand_dir / "prompt.md").read_text(
@@ -43,7 +53,7 @@ class CursorRewriter:
         )
 
         prompt = self._build_prompt(
-            brand_prompt, meta, transcript, remake_path, duration_hint
+            brand_prompt, meta, transcript, remake_path, duration_hint, research_context
         )
 
         try:
@@ -57,7 +67,11 @@ class CursorRewriter:
                 exc,
             )
             remake = self.fallback.rewrite(
-                brand_prompt, meta, transcript, duration_hint=duration_hint
+                brand_prompt,
+                meta,
+                transcript,
+                duration_hint=duration_hint,
+                research_context=research_context,
             )
             remake_path.write_text(remake.model_dump_json(indent=2), encoding="utf-8")
             return remake
@@ -69,6 +83,7 @@ class CursorRewriter:
         transcript: TranscriptResult,
         remake_path: Path,
         duration_hint: str | None = None,
+        research_context: str | None = None,
     ) -> str:
         source_json = json.dumps(
             {
@@ -82,20 +97,28 @@ class CursorRewriter:
             ensure_ascii=False,
             indent=2,
         )
+        research_block = ""
+        if research_context:
+            research_block = f"""
+## Ресёрч из интернета (используй факты и углы — не выдумывай)
+{research_context}
+"""
         if meta.platform == "topic":
             return f"""
-Прочитай brand/prompt.md и ТЕМУ ниже.
-Создай ОРИГИНАЛЬНЫЙ сценарий faceless Reels на русском с нуля (не ремейк).
+Прочитай brand/prompt.md, РЕСЁРЧ и ТЕМУ ниже.
+Создай ОРИГИНАЛЬНЫЙ вирусный сценарий faceless Reels на русском с нуля (не ремейк).
+Опирайся на ресёрч: факты, тренды, боль аудитории. Хук — максимально цепкий.
 Длина озвучки: строго 30–40 секунд (~75–100 слов).
 
 Запиши результат в файл: {remake_path.as_posix()}
 
 Формат JSON (строго):
 {REMAKE_SCHEMA}
+{BROLL_RULES}
 
 ## brand/prompt.md
 {brand_prompt}
-
+{research_block}
 ## Тема / ТЗ
 {source_json}
 {f"## Дополнительное требование\n{duration_hint}\n" if duration_hint else ""}
@@ -111,6 +134,7 @@ class CursorRewriter:
 
 Формат JSON (строго):
 {REMAKE_SCHEMA}
+{BROLL_RULES}
 
 ## brand/prompt.md
 {brand_prompt}

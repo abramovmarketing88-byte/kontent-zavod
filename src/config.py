@@ -82,6 +82,7 @@ class Settings:
     telegram_business_connection_id: str = ""
     telegram_story_upload: bool = False
     telegram_story_active_period: int = 86400
+    telegram_topic_intake: bool = True
 
     # Multi-platform publish flags (aliases keep YOUTUBE_UPLOAD / TELEGRAM_STORY_UPLOAD)
     publish_enabled: bool = True
@@ -231,6 +232,10 @@ def load_settings() -> Settings:
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_owner_chat_id=os.getenv("TELEGRAM_OWNER_CHAT_ID", ""),
         telegram_notify=telegram_notify,
+        telegram_topic_intake=_env_bool(
+            "TELEGRAM_TOPIC_INTAKE",
+            "true" if telegram_notify else "false",
+        ),
         max_videos_per_run=int(os.getenv("MAX_VIDEOS_PER_RUN", "1")),
         schedule_hours=int(os.getenv("SCHEDULE_HOURS", "6")),
         daily_at=os.getenv("DAILY_AT", "09:00"),
