@@ -83,6 +83,7 @@ class Settings:
     telegram_story_upload: bool = False
     telegram_story_active_period: int = 86400
     telegram_topic_intake: bool = True
+    heygen_engine: str = "avatar_iii"
 
     # Multi-platform publish flags (aliases keep YOUTUBE_UPLOAD / TELEGRAM_STORY_UPLOAD)
     publish_enabled: bool = True
@@ -228,6 +229,8 @@ def load_settings() -> Settings:
         heygen_api_key=os.getenv("HEYGEN_API_KEY", ""),
         heygen_avatar_id=os.getenv("HEYGEN_AVATAR_ID", ""),
         heygen_intro_sec=float(os.getenv("HEYGEN_INTRO_SEC", "8")),
+        # avatar_iii cheaper than default avatar_iv; set HEYGEN_ENGINE=avatar_iv to override
+        heygen_engine=os.getenv("HEYGEN_ENGINE", "avatar_iii").strip().lower() or "avatar_iii",
         renderer=os.getenv("RENDERER", "faceless"),
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_owner_chat_id=os.getenv("TELEGRAM_OWNER_CHAT_ID", ""),

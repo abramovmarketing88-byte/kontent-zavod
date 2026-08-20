@@ -30,7 +30,10 @@ class HybridRenderer:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.client = HeyGenClient(settings.heygen_api_key)
+        self.client = HeyGenClient(
+            settings.heygen_api_key,
+            engine=getattr(settings, "heygen_engine", "avatar_iii"),
+        )
         self.intro_sec = settings.heygen_intro_sec
 
     def render(

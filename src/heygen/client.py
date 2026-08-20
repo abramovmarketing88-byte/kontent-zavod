@@ -18,10 +18,11 @@ class HeyGenError(RuntimeError):
 
 
 class HeyGenClient:
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, *, engine: str = "avatar_iii") -> None:
         if not api_key:
             raise HeyGenError("HEYGEN_API_KEY not set")
         self.api_key = api_key
+        self.engine = (engine or "avatar_iii").strip().lower() or "avatar_iii"
         self._headers = {"X-Api-Key": api_key}
 
     def upload_audio(self, audio_path: Path) -> str:
@@ -56,7 +57,9 @@ class HeyGenClient:
             "audio_asset_id": audio_asset_id,
             "aspect_ratio": aspect_ratio,
             "resolution": resolution,
+            "engine": {"type": self.engine},
         }
+        logger.info("HeyGen create video engine=%s avatar=%s", self.engine, avatar_id)
         with httpx.Client(timeout=60.0) as client:
             resp = client.post(
                 f"{BASE_URL}/v3/videos",

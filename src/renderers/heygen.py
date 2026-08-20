@@ -20,7 +20,10 @@ CACHE_FILE = "heygen_asset.json"
 class HeyGenRenderer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.client = HeyGenClient(settings.heygen_api_key)
+        self.client = HeyGenClient(
+            settings.heygen_api_key,
+            engine=getattr(settings, "heygen_engine", "avatar_iii"),
+        )
 
     def render(
         self,
