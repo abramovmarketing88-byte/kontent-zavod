@@ -17,7 +17,16 @@ logger = logging.getLogger(__name__)
 
 def discover_sources(settings: Settings, db: Database) -> list[SourceMeta]:
     reclaimed = db.reclaim_stale()
+    reclaimed_orders = db.reclaim_stale_orders()
     topics = TopicDiscoverer(settings, db).discover()
+    if topics:
+        logger.info(
+            "Discovered %d Telegram order(s) (reclaimed_sources=%d reclaimed_orders=%d)",
+            len(topics),
+            reclaimed,
+            reclaimed_orders,
+        )
+        return topics
     inbox = InboxDiscoverer(settings, db).discover()
     youtube = YouTubeDiscoverer(settings, db).discover()
     instagram = InstagramDiscoverer(settings, db).discover()
@@ -33,7 +42,7 @@ def discover_sources(settings: Settings, db: Database) -> list[SourceMeta]:
             merged[meta.source_id] = meta
     result = sorted(merged.values(), key=lambda m: m.score, reverse=True)
     logger.info(
-        "Discovered %d source(s) (topic=%d inbox=%d yt=%d ig=%d retry=%d reclaimed=%d)",
+        "Discovered %d source(s) (topic=%d inbox=%d yt=%d ig=%d retry=%d reclaimed=%d reclaimed_orders=%d)",
         len(result),
         len(topics),
         len(inbox),
@@ -41,5 +50,6 @@ def discover_sources(settings: Settings, db: Database) -> list[SourceMeta]:
         len(instagram),
         len(retries),
         reclaimed,
+        reclaimed_orders,
     )
     return result

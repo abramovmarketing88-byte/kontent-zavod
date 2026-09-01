@@ -1,5 +1,5 @@
 #!/bin/bash
-# Poll Telegram for topic orders (text/voice) → inbox/topic.txt + run-once trigger.
+# Compatibility one-shot poll. Production uses the telegram-bot compose service.
 set -eu
 cd /opt/kontent-zavod
 mkdir -p data logs inbox

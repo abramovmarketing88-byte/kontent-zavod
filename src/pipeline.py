@@ -21,13 +21,16 @@ from src.db import Database
 from src.discover.service import discover_sources
 from src.jobs import (
     job_dir,
+    read_remake,
+    read_transcript,
     write_caption,
     write_remake,
     write_source,
     write_transcript,
 )
-from src.models import JobStatus, today_output_dir
+from src.models import JobStatus, OrderStatus, today_output_dir
 from src.publish.telegram import (
+    edit_message_text,
     send_document,
     send_message,
     send_source_breakdown,
@@ -96,6 +99,124 @@ class Pipeline:
             logger.warning("Telegram report document failed: %s", exc)
             self._tg(self.report.telegram_summary())
 
+    def _order_card(
+        self,
+        order_id: str,
+        status: OrderStatus,
+        stage: str,
+        text: str,
+        *,
+        reply_markup: dict | None = None,
+        finished: bool = False,
+        draft_version: int | None = None,
+        error_code: str | None = None,
+        error_user_text: str | None = None,
+    ) -> None:
+        order = self.db.update_order(
+            order_id,
+            status,
+            current_stage=stage,
+            draft_version=draft_version,
+            error_code=error_code,
+            error_user_text=error_user_text,
+            finished=finished,
+        )
+        if not order or not self.settings.telegram_notify:
+            return
+        try:
+            if order.status_message_id:
+                edit_message_text(
+                    self.settings.telegram_bot_token,
+                    order.owner_chat_id,
+                    order.status_message_id,
+                    text[:4096],
+                    reply_markup=reply_markup,
+                )
+            else:
+                result = send_message(
+                    self.settings.telegram_bot_token,
+                    order.owner_chat_id,
+                    text[:4096],
+                    reply_markup=reply_markup,
+                )
+                self.db.set_status_message(
+                    order_id, int(result["result"]["message_id"])
+                )
+        except Exception as exc:
+            logger.warning("Order card update failed for %s: %s", order_id, exc)
+            if order.status_message_id:
+                try:
+                    result = send_message(
+                        self.settings.telegram_bot_token,
+                        order.owner_chat_id,
+                        text[:4096],
+                        reply_markup=reply_markup,
+                    )
+                    self.db.set_status_message(
+                        order_id, int(result["result"]["message_id"])
+                    )
+                except Exception as fallback_exc:
+                    logger.warning(
+                        "Order card fallback send failed for %s: %s",
+                        order_id,
+                        fallback_exc,
+                    )
+
+    def _order_cancelled(self, order_id: str) -> bool:
+        order = self.db.get_order(order_id)
+        return bool(order and order.status == OrderStatus.CANCELLED)
+
+    def _publish_existing_order(self, order, meta, path: Path) -> bool:
+        from src.publish.base import PublishMeta
+        from src.publish.orchestrator import PublishOrchestrator, default_publishers
+
+        video = Path(order.output_path)
+        if not video.exists():
+            raise FileNotFoundError(f"Rendered video missing for order {order.id}")
+        remake = read_remake(path)
+        self._order_card(
+            order.id,
+            OrderStatus.PUBLISHING,
+            "publishing",
+            f"📣 Заказ #{order.id}\nСтатус: публикую на подключённые площадки",
+        )
+        publishers = [p for p in default_publishers() if p.name != "telegram_dm"]
+        results = PublishOrchestrator(
+            self.settings,
+            publishers=publishers,
+            notify=self._tg if self.settings.telegram_notify else None,
+            report=self.report,
+        ).publish_all(
+            video,
+            PublishMeta(
+                title=remake.title,
+                caption=remake.caption,
+                hashtags=list(remake.hashtags),
+                source_id=meta.source_id,
+                order_id=order.id,
+                video_path=video,
+            ),
+        )
+        if any(result.status == "ok" for result in results):
+            self._order_card(
+                order.id,
+                OrderStatus.PUBLISHED,
+                "published",
+                f"✅ Заказ #{order.id}\nСтатус: опубликовано",
+                finished=True,
+            )
+        else:
+            self._order_card(
+                order.id,
+                OrderStatus.READY,
+                "ready",
+                f"⚠️ Заказ #{order.id}\nВидео готово, но публикация не выполнена.\n\n"
+                "Проверь включённые PUBLISH_* и ключи площадок, затем нажми публикацию снова.",
+                error_code="publish_not_completed",
+                error_user_text="Ни одна подключённая площадка не подтвердила публикацию.",
+            )
+        return True
+
     def run_once(self) -> int:
         report = self.report
         if report:
@@ -107,15 +228,10 @@ class Pipeline:
                 report.stage("discover_empty")
                 report.complete(0, empty=True)
                 self._send_report_file("⚠️ Нет новых Reels — отчёт прогона")
-            self._tg(
-                "⚠️ Разовый заказ: новых залетевших Reels не нашёл "
-                "(все уже в базе или ниже порога просмотров).\n"
-                "Кинь тему в Telegram боту, ссылку в inbox/urls.txt "
-                "или подними min_views / дождись свежих."
-            )
             return 0
 
         processed = 0
+        deferred = 0
         last_error = ""
         # Try several discovered sources until we successfully finish max_videos_per_run
         for meta in sources:
@@ -124,26 +240,50 @@ class Pipeline:
             if report:
                 report.add_source(meta)
             try:
-                self._process_one(meta)
-                processed += 1
+                completed = self._process_one(meta)
+                if completed:
+                    processed += 1
+                else:
+                    deferred += 1
             except Exception as exc:
                 last_error = str(exc)
                 logger.exception("Failed to process %s: %s", meta.source_id, exc)
                 self.db.update_status(meta.source_id, JobStatus.FAILED, str(exc))
+                if meta.order_id:
+                    from src.telegram.topic_intake import failed_keyboard
+
+                    self._order_card(
+                        meta.order_id,
+                        OrderStatus.FAILED,
+                        "failed",
+                        f"❌ Заказ #{meta.order_id}\nСтатус: нужна помощь\n\n"
+                        "Не удалось завершить текущий этап. Можно безопасно повторить заказ.",
+                        reply_markup=failed_keyboard(meta.order_id),
+                        finished=True,
+                        error_code="pipeline_failed",
+                        error_user_text="Не удалось завершить текущий этап.",
+                    )
                 if report:
                     report.stage("failed", f"{meta.source_id}: {exc}")
                     report.errors.append(f"{meta.source_id}: {exc}")
-                self._tg(
-                    f"❌ Не смог собрать ролик из «{meta.title}»\n"
-                    f"{meta.url}\n\nОшибка: {exc}\nПробую следующий источник…"
-                )
+                if not meta.order_id:
+                    self._tg(
+                        f"❌ Не смог собрать ролик из «{meta.title}»\n"
+                        f"{meta.url}\n\nОшибка: {exc}\nПробую следующий источник…"
+                    )
+        if self.db.has_runnable_orders():
+            # Multiple Telegram messages may arrive before one trigger is consumed.
+            # Wake the next run so every durable order eventually advances.
+            from src.telegram.topic_intake import bump_run_once_trigger
+
+            bump_run_once_trigger(self.settings.root)
         if processed == 0 and last_error:
             if report:
                 report.fail(RuntimeError(last_error))
                 self._send_report_file("💥 Прогон упал — отчёт")
             raise RuntimeError(f"All videos failed; last error: {last_error}")
         if report:
-            report.stage("done", f"processed={processed}")
+            report.stage("done", f"processed={processed} deferred={deferred}")
             report.complete(processed)
             self._send_report_file(f"✅ Прогон ок — processed={processed}. last-run.md")
         if processed > 0:
@@ -155,8 +295,16 @@ class Pipeline:
             )
         return processed
 
-    def _process_one(self, meta) -> None:
+    def _process_one(self, meta) -> bool:
         path = job_dir(self.settings.jobs_dir, meta.source_id)
+        order = self.db.get_order(meta.order_id) if meta.order_id else None
+        resume_stage = order.current_stage if order else ""
+        if order and resume_stage == OrderStatus.PUBLISH_REQUESTED.value:
+            return self._publish_existing_order(order, meta, path)
+        renderer_mode = (
+            order.renderer if order and order.renderer != "auto" else self.settings.renderer
+        ).lower()
+        renderer = get_renderer(self.settings, renderer_mode)
         self.db.upsert_source(meta, str(path), JobStatus.DISCOVERED)
         write_source(path, meta)
         logger.info("=== Processing %s: %s ===", meta.source_id, meta.title)
@@ -165,7 +313,53 @@ class Pipeline:
             report.stage("analyze", meta.source_id)
 
         research_context: str | None = None
-        if meta.platform == "topic":
+        if order and resume_stage == OrderStatus.QUEUED.value:
+            self._order_card(
+                order.id,
+                OrderStatus.PROCESSING,
+                "research",
+                f"🔎 Заказ #{order.id}\nСтатус: исследую тему и готовлю сценарий",
+                reply_markup={
+                    "inline_keyboard": [[
+                        {"text": "🗑 Отменить", "callback_data": f"order:cancel:{order.id}"}
+                    ]]
+                },
+            )
+        if order and resume_stage == OrderStatus.APPROVED.value:
+            transcript = read_transcript(path)
+            remake = read_remake(path)
+        elif order and resume_stage == OrderStatus.REVISION_REQUESTED.value:
+            transcript = read_transcript(path)
+            previous = read_remake(path)
+            instruction = order.revision_instruction.strip()
+            hint = (
+                "Отредактируй предыдущий сценарий по инструкции пользователя.\n"
+                f"ПРЕДЫДУЩИЙ СЦЕНАРИЙ:\n{previous.script}\n\n"
+                f"ИНСТРУКЦИЯ ПОЛЬЗОВАТЕЛЯ:\n{instruction}"
+            )
+            remake = self.rewriter.rewrite(
+                path,
+                meta,
+                transcript,
+                duration_hint=hint,
+            )
+            write_remake(path, remake)
+            self.db.update_status(meta.source_id, JobStatus.REWRITTEN)
+            version = max(1, order.draft_version + 1)
+            from src.telegram.topic_intake import draft_keyboard
+
+            self._order_card(
+                order.id,
+                OrderStatus.DRAFT_READY,
+                "draft_ready",
+                f"📝 Заказ #{order.id} · сценарий v{version}\n\n"
+                f"Хук: {remake.hook}\n\n{remake.script}\n\n"
+                "Проверь текст. Озвучка и рендер ещё не запускались.",
+                reply_markup=draft_keyboard(order.id),
+                draft_version=version,
+            )
+            return False
+        elif meta.platform == "topic":
             # Freeform idea — no download / whisper
             from src.discover.topic import topic_brief_path
             from src.models import TranscriptResult
@@ -180,7 +374,7 @@ class Pipeline:
             transcript = TranscriptResult(text=topic_text, language="ru")
             write_transcript(path, transcript)
             self.db.update_status(meta.source_id, JobStatus.ANALYZED)
-            if self.settings.telegram_notify:
+            if self.settings.telegram_notify and not order:
                 # topic_text already starts with the title line — don't repeat it
                 self._tg(f"🧠 Тема без исходника\n\n{topic_text[:1800]}")
 
@@ -189,7 +383,7 @@ class Pipeline:
             try:
                 research = self.researcher.gather(path, meta, topic_text)
                 research_context = research.prompt_block()
-                if self.settings.telegram_notify and research.summary:
+                if self.settings.telegram_notify and research.summary and not order:
                     preview = research.summary[:1200]
                     angles = ""
                     if research.viral_angles:
@@ -199,7 +393,7 @@ class Pipeline:
                     self._tg(f"🔎 Ресёрч по теме\n\n{preview}{angles}")
             except Exception as exc:
                 logger.warning("Topic research failed: %s", exc)
-                if self.settings.telegram_notify:
+                if self.settings.telegram_notify and not order:
                     self._tg(f"⚠️ Ресёрч не удался ({exc}) — пишу сценарий по теме.")
         else:
             transcript = self.analyzer.analyze(path, meta)
@@ -218,24 +412,96 @@ class Pipeline:
                     structure,
                 )
 
-        if report:
-            report.stage("rewrite", meta.source_id)
-        remake = self.rewriter.rewrite(
-            path, meta, transcript, research_context=research_context
-        )
-        write_remake(path, remake)
-        self.db.update_status(meta.source_id, JobStatus.REWRITTEN)
+        if order and self._order_cancelled(order.id):
+            return False
+
+        if not (order and resume_stage == OrderStatus.APPROVED.value):
+            if order:
+                self._order_card(
+                    order.id,
+                    OrderStatus.PROCESSING,
+                    "rewrite",
+                    f"✍️ Заказ #{order.id}\nСтатус: пишу сценарий",
+                    reply_markup={
+                        "inline_keyboard": [[
+                            {"text": "🗑 Отменить", "callback_data": f"order:cancel:{order.id}"}
+                        ]]
+                    },
+                )
+            if report:
+                report.stage("rewrite", meta.source_id)
+            remake = self.rewriter.rewrite(
+                path, meta, transcript, research_context=research_context
+            )
+            write_remake(path, remake)
+            self.db.update_status(meta.source_id, JobStatus.REWRITTEN)
+
+        if order and resume_stage != OrderStatus.APPROVED.value:
+            from src.telegram.topic_intake import draft_keyboard
+
+            version = max(1, order.draft_version + 1)
+            self._order_card(
+                order.id,
+                OrderStatus.DRAFT_READY,
+                "draft_ready",
+                f"📝 Заказ #{order.id} · сценарий v{version}\n\n"
+                f"Хук: {remake.hook}\n\n{remake.script}\n\n"
+                "Проверь текст. Озвучка и рендер ещё не запускались.",
+                reply_markup=draft_keyboard(order.id),
+                draft_version=version,
+            )
+            return False
+
+        if order:
+            self._order_card(
+                order.id,
+                OrderStatus.VOICING,
+                "voice",
+                f"🎙 Заказ #{order.id}\nСтатус: озвучиваю сценарий",
+            )
 
         if report:
             report.stage("voice", meta.source_id)
         voice_result = self.voice.synthesize(path, remake)
-        voice_result = self._ensure_target_duration(
-            path, meta, transcript, remake, voice_result, research_context=research_context
+        remake, voice_result, needs_reapproval = self._ensure_target_duration(
+            path,
+            meta,
+            transcript,
+            remake,
+            voice_result,
+            research_context=research_context,
+            require_approval=bool(order),
         )
+        if order and needs_reapproval:
+            from src.telegram.topic_intake import draft_keyboard
+
+            refreshed = self.db.get_order(order.id) or order
+            version = max(1, refreshed.draft_version + 1)
+            self._order_card(
+                order.id,
+                OrderStatus.DRAFT_READY,
+                "draft_ready",
+                f"📝 Заказ #{order.id} · сценарий v{version}\n\n"
+                f"Хук: {remake.hook}\n\n{remake.script}\n\n"
+                "Я скорректировал длину после пробной озвучки. Проверь новую версию перед рендером.",
+                reply_markup=draft_keyboard(order.id),
+                draft_version=version,
+            )
+            return False
         self.db.update_status(meta.source_id, JobStatus.VOICED)
 
+        if order and self._order_cancelled(order.id):
+            return False
+
         shot_clips: list[Path] = []
-        if self.settings.renderer.lower() in ("faceless", "hybrid"):
+        if renderer_mode in ("faceless", "hybrid"):
+            if order:
+                self._order_card(
+                    order.id,
+                    OrderStatus.VISUALS,
+                    "visuals",
+                    f"🎞 Заказ #{order.id}\nСтатус: подбираю визуалы",
+                )
             if report:
                 report.stage("pexels", meta.source_id)
             shot_clips = self.pexels.download_shots(
@@ -244,9 +510,16 @@ class Pipeline:
                 topic=meta.title if meta.platform == "topic" else "",
             )
 
+        if order:
+            self._order_card(
+                order.id,
+                OrderStatus.RENDERING,
+                "render",
+                f"⚙️ Заказ #{order.id}\nСтатус: собираю финальное видео",
+            )
         if report:
-            report.stage("render", f"{self.settings.renderer}:{meta.source_id}")
-        final = self.renderer.render(path, remake, voice_result, shot_clips)
+            report.stage("render", f"{renderer_mode}:{meta.source_id}")
+        final = renderer.render(path, remake, voice_result, shot_clips)
         self.db.update_status(meta.source_id, JobStatus.RENDERED)
 
         out_dir = Path(today_output_dir(str(self.settings.output_dir)))
@@ -256,6 +529,13 @@ class Pipeline:
         shutil.copy2(final, dest_video)
         write_caption(out_dir, slug, remake.caption, remake.hashtags)
         logger.info("Output: %s", dest_video)
+        if order:
+            self.db.update_order(
+                order.id,
+                OrderStatus.RENDERING,
+                current_stage="render",
+                output_path=str(dest_video),
+            )
 
         from src.publish.base import PublishMeta
         from src.publish.orchestrator import PublishOrchestrator
@@ -265,10 +545,19 @@ class Pipeline:
             caption=remake.caption or "",
             hashtags=list(remake.hashtags or []),
             source_id=meta.source_id,
+            order_id=meta.order_id,
             video_path=dest_video,
         )
+        publishers = None
+        if order:
+            from src.publish.adapters_telegram_dm import TelegramDmPublisher
+
+            # Telegram order delivery is a preview. External platforms require
+            # the explicit "Publish" button from the ready card.
+            publishers = [TelegramDmPublisher()]
         results = PublishOrchestrator(
             self.settings,
+            publishers=publishers,
             notify=self._tg if self.settings.telegram_notify else None,
             report=report,
         ).publish_all(dest_video, meta_pub)
@@ -276,16 +565,34 @@ class Pipeline:
             self.db.update_status(meta.source_id, JobStatus.PUBLISHED)
         elif any(r.status == "ok" for r in results):
             self.db.update_status(meta.source_id, JobStatus.PUBLISHED)
+        if order:
+            self._order_card(
+                order.id,
+                OrderStatus.READY,
+                "ready",
+                f"✅ Заказ #{order.id}\nСтатус: готово\n\n"
+                "Видео и текст публикации отправлены отдельным сообщением.",
+                finished=True,
+            )
+        return True
 
     def _ensure_target_duration(
-        self, path, meta, transcript, remake, voice_result, *, research_context=None
+        self,
+        path,
+        meta,
+        transcript,
+        remake,
+        voice_result,
+        *,
+        research_context=None,
+        require_approval: bool = False,
     ):
         min_sec = self.settings.target_duration_min
         max_sec = self.settings.target_duration_max
         duration = voice_result.duration_sec
 
         if min_sec <= duration <= max_sec:
-            return voice_result
+            return remake, voice_result, False
 
         if duration < min_sec:
             hint = (
@@ -311,7 +618,9 @@ class Pipeline:
         )
         write_remake(path, remake)
         self.db.update_status(meta.source_id, JobStatus.REWRITTEN)
-        return self.voice.synthesize(path, remake)
+        if require_approval:
+            return remake, voice_result, True
+        return remake, self.voice.synthesize(path, remake), False
 
 
 def _parse_daily_at(value: str) -> tuple[int, int]:

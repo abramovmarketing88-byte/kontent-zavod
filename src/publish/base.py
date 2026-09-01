@@ -17,6 +17,7 @@ class PublishMeta:
     caption: str = ""
     hashtags: list[str] = field(default_factory=list)
     source_id: str = ""
+    order_id: str = ""
     video_path: Path | None = None
 
     def description(self, *, max_len: int = 4000) -> str:

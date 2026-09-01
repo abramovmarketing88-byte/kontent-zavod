@@ -20,3 +20,24 @@ services:
       - ./reports:/app/reports
       - ./logs:/app/logs
       - ./scripts/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      - ./triggers:/app/triggers
+
+  telegram-bot:
+    build: .
+    command: ["python", "-m", "src.telegram.topic_intake", "--loop"]
+    env_file: .env
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ${HTTP_PROXY:-http://127.0.0.1:7890}
+      HTTPS_PROXY: ${HTTPS_PROXY:-http://127.0.0.1:7890}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,192.168.0.0/16}
+      PROXY_REQUIRED: ${PROXY_REQUIRED:-false}
+    volumes:
+      - ./data:/app/data
+      - ./inbox:/app/inbox
+      - ./brand:/app/brand
+      - ./config:/app/config
+      - ./logs:/app/logs
+      - ./triggers:/app/triggers
+      - ./scripts/docker-entrypoint.sh:/docker-entrypoint.sh:ro

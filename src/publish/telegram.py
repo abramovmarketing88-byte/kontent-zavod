@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -15,16 +16,50 @@ API = "https://api.telegram.org/bot{token}/{method}"
 MAX_MESSAGE_LEN = 4096
 
 
-def send_message(bot_token: str, chat_id: str, text: str) -> dict:
+def send_message(
+    bot_token: str,
+    chat_id: str,
+    text: str,
+    *,
+    reply_markup: dict[str, Any] | None = None,
+) -> dict:
     if not bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
     if not chat_id:
         raise RuntimeError("TELEGRAM_OWNER_CHAT_ID not set")
 
     url = API.format(token=bot_token, method="sendMessage")
+    payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    resp = httpx.post(url, json=payload, timeout=60.0)
+    resp.raise_for_status()
+    data = resp.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"Telegram API error: {data}")
+    return data
+
+
+def edit_message_text(
+    bot_token: str,
+    chat_id: str,
+    message_id: int,
+    text: str,
+    *,
+    reply_markup: dict[str, Any] | None = None,
+) -> dict:
+    if not bot_token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
     resp = httpx.post(
-        url,
-        json={"chat_id": chat_id, "text": text},
+        API.format(token=bot_token, method="editMessageText"),
+        json=payload,
         timeout=60.0,
     )
     resp.raise_for_status()
@@ -108,6 +143,7 @@ def send_video(
     *,
     width: int = 1080,
     height: int = 1920,
+    reply_markup: dict[str, Any] | None = None,
 ) -> dict:
     if not bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
@@ -118,15 +154,20 @@ def send_video(
 
     url = API.format(token=bot_token, method="sendVideo")
     with video_path.open("rb") as video_file:
+        form = {
+            "chat_id": chat_id,
+            "caption": caption[:1024],
+            "supports_streaming": "true",
+            "width": str(width),
+            "height": str(height),
+        }
+        if reply_markup is not None:
+            import json
+
+            form["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
         resp = httpx.post(
             url,
-            data={
-                "chat_id": chat_id,
-                "caption": caption[:1024],
-                "supports_streaming": "true",
-                "width": str(width),
-                "height": str(height),
-            },
+            data=form,
             files={"video": (video_path.name, video_file, "video/mp4")},
             timeout=300.0,
         )
@@ -143,9 +184,17 @@ def notify_owner(
     owner_chat_id: str,
     video_path: Path,
     caption: str,
+    *,
+    reply_markup: dict[str, Any] | None = None,
 ) -> dict:
     """Deliver rendered video to owner's private chat."""
-    return send_video(bot_token, owner_chat_id, video_path, caption)
+    return send_video(
+        bot_token,
+        owner_chat_id,
+        video_path,
+        caption,
+        reply_markup=reply_markup,
+    )
 
 
 def send_document(

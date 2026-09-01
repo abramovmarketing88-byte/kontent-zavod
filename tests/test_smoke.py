@@ -588,6 +588,7 @@ def test_topic_discoverer_run_id(tmp_path: Path) -> None:
 
 def test_telegram_topic_intake_helpers() -> None:
     from src.config import InstagramNicheConfig, NicheConfig, Settings
+    from src.db import Database
     from src.telegram.topic_intake import (
         build_topic_file,
         format_topic_brief,
@@ -597,7 +598,8 @@ def test_telegram_topic_intake_helpers() -> None:
 
     assert parse_topic_text("/topic нейросети для бизнеса") == "нейросети для бизнеса"
     assert parse_topic_text("/help") is None
-    assert parse_topic_text("просто тема") == "просто тема"
+    # Audit requirement: idle free text must not silently become an order.
+    assert parse_topic_text("просто тема") is None
 
     brief = format_topic_brief("у жизни нет черновика")
     assert brief.startswith("У жизни нет черновика")
@@ -644,10 +646,172 @@ def test_telegram_topic_intake_helpers() -> None:
             niche=NicheConfig(),
             instagram=InstagramNicheConfig(),
         )
-        run_id, trigger_id = queue_topic(settings, "у жизни нет черновика")
-        assert len(run_id) == 12
-        assert (root / "inbox" / "topic.txt").exists()
+        order_id, trigger_id = queue_topic(settings, "у жизни нет черновика")
+        assert len(order_id) == 12
+        order = Database(settings.db_path).get_order(order_id)
+        assert order is not None
+        assert order.topic == "у жизни нет черновика"
+        assert order.status.value == "queued"
+        assert not (root / "inbox" / "topic.txt").exists()
         assert (root / "triggers" / "run-once.id").read_text().strip() == trigger_id
+
+
+def test_durable_order_queue_keeps_all_topics(tmp_path: Path) -> None:
+    from src.db import Database
+    from src.models import OrderStatus
+
+    db = Database(tmp_path / "factory.db")
+    created = [
+        db.create_order("42", f"Тема {i}", f"Бриф {i}")
+        for i in range(10)
+    ]
+    assert len({order.id for order in created}) == 10
+    assert len(db.list_orders("42", limit=20)) == 10
+
+    claimed = []
+    for _ in range(10):
+        order = db.claim_next_order()
+        assert order is not None
+        claimed.append(order.id)
+        db.update_order(order.id, OrderStatus.DRAFT_READY, current_stage="draft_ready")
+    assert set(claimed) == {order.id for order in created}
+    assert db.claim_next_order() is None
+
+    first = db.create_order("42", "Повтор", "Бриф", idempotency_key="telegram:777")
+    duplicate = db.create_order("42", "Повтор", "Бриф", idempotency_key="telegram:777")
+    assert duplicate.id == first.id
+    assert len([o for o in db.list_orders("42", 30) if o.id == first.id]) == 1
+
+
+def test_order_approval_revision_cancel_and_retry(tmp_path: Path) -> None:
+    from src.db import Database
+    from src.models import OrderStatus
+
+    db = Database(tmp_path / "factory.db")
+    order = db.create_order("42", "Тема", "Бриф")
+    db.update_order(order.id, OrderStatus.DRAFT_READY, current_stage="draft_ready")
+    assert db.approve_order(order.id, "42")
+    assert not db.approve_order(order.id, "42")  # callback is idempotent
+
+    claimed = db.claim_next_order()
+    assert claimed is not None
+    assert claimed.id == order.id
+    assert claimed.current_stage == "approved"
+
+    db.update_order(order.id, OrderStatus.FAILED, current_stage="failed")
+    assert db.retry_order(order.id, "42")
+    assert db.get_order(order.id).status == OrderStatus.QUEUED
+    assert not db.cancel_order(order.id, "wrong-owner")
+    assert db.cancel_order(order.id, "42")
+
+
+def test_topic_pipeline_stops_before_paid_stages_until_approval(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from src.db import Database
+    from src.discover.topic import TopicDiscoverer
+    from src.models import OrderStatus, RemakeSpec, ShotSpec
+    from src.pipeline import Pipeline
+
+    settings = SimpleNamespace(
+        jobs_dir=tmp_path / "jobs",
+        inbox_dir=tmp_path / "inbox",
+        output_dir=tmp_path / "output",
+        renderer="faceless",
+        telegram_notify=False,
+    )
+    db = Database(tmp_path / "factory.db")
+    order = db.create_order(
+        "42",
+        "5 ошибок на Авито",
+        "Сделай Reels про 5 ошибок на Авито",
+    )
+    meta = TopicDiscoverer(settings, db).discover()[0]
+
+    class FakeResearch:
+        summary = ""
+        viral_angles = []
+
+        def prompt_block(self) -> str:
+            return ""
+
+    class FakeResearcher:
+        def gather(self, *args, **kwargs):
+            return FakeResearch()
+
+    class FakeRewriter:
+        def rewrite(self, *args, **kwargs):
+            return RemakeSpec(
+                hook="Стоп: эти ошибки сливают бюджет",
+                script="Проверь пять типичных ошибок перед запуском рекламы на Авито.",
+                shots=[ShotSpec(keywords=["office typing"])],
+                caption="Проверь объявления",
+                hashtags=["#авито"],
+                title="Ошибки на Авито",
+            )
+
+    class MustNotRun:
+        def __getattr__(self, name):
+            raise AssertionError(f"Paid/render stage ran before approval: {name}")
+
+    pipeline = object.__new__(Pipeline)
+    pipeline.settings = settings
+    pipeline.db = db
+    pipeline.report = None
+    pipeline.researcher = FakeResearcher()
+    pipeline.rewriter = FakeRewriter()
+    pipeline.voice = MustNotRun()
+    pipeline.pexels = MustNotRun()
+
+    assert pipeline._process_one(meta) is False
+    saved = db.get_order(order.id)
+    assert saved is not None
+    assert saved.status == OrderStatus.DRAFT_READY
+    assert saved.draft_version == 1
+    assert (tmp_path / "jobs" / meta.source_id / "remake.json").exists()
+
+
+def test_publish_requires_ready_order_and_is_resumable(tmp_path: Path) -> None:
+    from src.db import Database
+    from src.models import OrderStatus
+
+    db = Database(tmp_path / "factory.db")
+    order = db.create_order("42", "Тема", "Бриф", renderer="hybrid")
+    assert not db.request_publish(order.id, "42")
+    db.update_order(
+        order.id,
+        OrderStatus.READY,
+        current_stage="ready",
+        output_path="/tmp/example.mp4",
+        finished=True,
+    )
+    assert db.request_publish(order.id, "42")
+    claimed = db.claim_next_order()
+    assert claimed is not None
+    assert claimed.current_stage == OrderStatus.PUBLISH_REQUESTED.value
+    assert claimed.renderer == "hybrid"
+
+
+def test_telegram_menu_callbacks_are_explicit() -> None:
+    from src.telegram.topic_intake import (
+        confirm_topic_keyboard,
+        draft_keyboard,
+        format_keyboard,
+        main_menu,
+    )
+
+    menu_data = str(main_menu())
+    assert "menu:new" in menu_data
+    assert "menu:orders" in menu_data
+    assert "input:confirm" in str(confirm_topic_keyboard())
+    formats = str(format_keyboard())
+    assert "input:format:faceless" in formats
+    assert "input:format:heygen" in formats
+    assert "input:format:hybrid" in formats
+    draft = str(draft_keyboard("abc123"))
+    assert "order:approve:abc123" in draft
+    assert "order:edit:abc123" in draft
+    assert "order:cancel:abc123" in draft
 
 
 def test_broll_query_enhancement() -> None:
@@ -683,9 +847,13 @@ def test_check_telegram_topic_script_exists() -> None:
     assert script.is_file()
     text = script.read_text(encoding="utf-8")
     assert "topic_intake" in text
-    assert "check_telegram_topic" in (root / "scripts" / "auto_update.sh").read_text(
-        encoding="utf-8"
-    )
+    auto_update = (root / "scripts" / "auto_update.sh").read_text(encoding="utf-8")
+    compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "check_telegram_topic.sh" not in auto_update
+    assert "telegram-bot" in auto_update
+    assert "src.telegram.topic_intake" in compose
+    assert "--loop" in compose
+    assert "./triggers:/app/triggers" in compose
 
 
 def test_diagnose_and_entrypoint_scripts_exist() -> None:

@@ -17,13 +17,16 @@ if [ "$LOCAL" != "$REMOTE" ]; then
   git reset --hard origin/main
   sed -i 's/\r$//' scripts/*.sh
   chmod +x scripts/*.sh
-  docker compose build worker
+  docker compose build worker telegram-bot
+  docker compose up -d worker telegram-bot
   echo "$(date -Is) updated to $(git rev-parse --short HEAD)" >> logs/update.log
 else
   echo "$(date -Is) already $(git rev-parse --short HEAD)" >> logs/update.log
 fi
 
-/opt/kontent-zavod/scripts/check_telegram_topic.sh || true
+# Telegram is handled by the dedicated long-polling service. Running the old
+# cron poller at the same time would race for getUpdates.
+docker compose up -d telegram-bot >/dev/null
 /opt/kontent-zavod/scripts/check_run_once.sh || true
 /opt/kontent-zavod/scripts/check_youtube_upload.sh || true
 /opt/kontent-zavod/scripts/check_telegram_story.sh || true

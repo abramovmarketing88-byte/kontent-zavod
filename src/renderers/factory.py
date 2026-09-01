@@ -8,8 +8,8 @@ from src.renderers.heygen import HeyGenRenderer
 from src.renderers.hybrid import HybridRenderer
 
 
-def get_renderer(settings: Settings):
-    mode = settings.renderer.lower()
+def get_renderer(settings: Settings, mode: str | None = None):
+    mode = (mode or settings.renderer).lower()
     if mode == "heygen":
         return HeyGenRenderer(settings)
     if mode == "hybrid":
@@ -17,5 +17,5 @@ def get_renderer(settings: Settings):
     if mode == "faceless":
         return FacelessFfmpegRenderer()
     raise ValueError(
-        f"Unknown RENDERER={settings.renderer!r}. Use 'faceless', 'heygen', or 'hybrid'."
+        f"Unknown renderer={mode!r}. Use 'faceless', 'heygen', or 'hybrid'."
     )

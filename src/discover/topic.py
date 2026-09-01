@@ -27,6 +27,42 @@ class TopicDiscoverer:
         self.processed_dir = settings.inbox_dir / "processed"
 
     def discover(self) -> list[SourceMeta]:
+        order = self.db.claim_next_order()
+        if order is not None:
+            source_id = order.source_id or f"topic_{order.id}"
+            text = order.brief.strip() or order.topic.strip()
+            self.processed_dir.mkdir(parents=True, exist_ok=True)
+            topic_brief_path(self.settings.inbox_dir, source_id).write_text(
+                text + "\n", encoding="utf-8"
+            )
+            self.db.update_order(
+                order.id,
+                order.status,
+                source_id=source_id,
+                current_stage=order.current_stage,
+            )
+            logger.info(
+                "Claimed order %s for stage=%s source=%s",
+                order.id,
+                order.current_stage,
+                source_id,
+            )
+            return [
+                SourceMeta(
+                    source_id=source_id,
+                    order_id=order.id,
+                    url=f"topic://{source_id}",
+                    title=order.topic[:120],
+                    views=0,
+                    channel="telegram",
+                    platform="topic",
+                    query="orders",
+                    score=2e9,
+                    duration_sec=35.0,
+                )
+            ]
+
+        # Backward-compatible legacy input for manual/SSH workflows.
         if not self.topic_file.exists():
             return []
         raw = self.topic_file.read_text(encoding="utf-8")

@@ -22,7 +22,7 @@ BROLL_RULES = """
 - 4–6 шотов, 2–4 сек каждый, смена планов (крупный → общий → действие).
 """
 
-
+REMAKE_SCHEMA = """
 {
   "hook": "string",
   "script": "string",

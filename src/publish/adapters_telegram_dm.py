@@ -22,16 +22,29 @@ class TelegramDmPublisher:
     def publish(self, video: Path, meta: PublishMeta, settings: Any) -> PublishResult:
         if not self.enabled(settings):
             return PublishResult.skipped(self.name, "disabled or missing TELEGRAM_*")
+        order_label = f" · заказ #{meta.order_id}" if meta.order_id else ""
         caption = (
-            f"🎬 Готов новый Reels\n\n{meta.caption}\n\n"
+            f"🎬 Готово вертикальное видео{order_label}\n\n{meta.caption}\n\n"
             f"{' '.join(meta.hashtags)}"
         ).strip()
+        buttons = None
+        if meta.order_id:
+            buttons = {
+                "inline_keyboard": [
+                    [{"text": "📣 Опубликовать", "callback_data": f"order:publish:{meta.order_id}"}],
+                    [
+                        {"text": "✏️ Изменить", "callback_data": f"order:edit:{meta.order_id}"},
+                        {"text": "🎬 Новый Reels", "callback_data": "menu:new"},
+                    ]
+                ]
+            }
         try:
             notify_owner(
                 settings.telegram_bot_token,
                 settings.telegram_owner_chat_id,
                 video,
                 caption[:1024],
+                reply_markup=buttons,
             )
             return PublishResult.ok(self.name, detail={"chat_id": settings.telegram_owner_chat_id})
         except Exception as exc:
