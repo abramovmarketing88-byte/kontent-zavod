@@ -6,6 +6,7 @@ cd /opt/kontent-zavod
 mkdir -p logs reports data
 
 SITE_DIR=/opt/kontent-zavod/sites/severnaya-zemlya-48
+# Prefer 80 for WAN (home routers often forward HTTP); override with LANDING48_PORT.
 PORT="${LANDING48_PORT:-8480}"
 PID_FILE=data/landing48.pid
 LOG_FILE=logs/landing48.log
@@ -50,6 +51,18 @@ else
 
   if command -v ufw >/dev/null 2>&1; then
     ufw allow "${PORT}/tcp" >/dev/null 2>&1 || true
+    ufw allow 8480/tcp >/dev/null 2>&1 || true
+  fi
+  if command -v iptables >/dev/null 2>&1; then
+    iptables -C INPUT -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null \
+      || iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null || true
+  fi
+
+  # If preferred port is busy, fall back to 8480
+  if [ "$PORT" = "80" ] && listening; then
+    log "port 80 already in use, falling back to 8480"
+    PORT=8480
+    PID_FILE=data/landing48.pid
   fi
 
   nohup "$PY" -m http.server "$PORT" --bind 0.0.0.0 --directory "$SITE_DIR" \

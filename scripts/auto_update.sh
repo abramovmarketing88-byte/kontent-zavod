@@ -28,11 +28,12 @@ fi
 /opt/kontent-zavod/scripts/check_youtube_upload.sh || true
 /opt/kontent-zavod/scripts/check_telegram_story.sh || true
 /opt/kontent-zavod/scripts/check_publish_once.sh || true
-echo "=== serve_landing48 begin ==="
-if /opt/kontent-zavod/scripts/serve_landing48.sh; then
-  echo "=== serve_landing48 ok ==="
+echo "=== deploy_landing48_openresty begin ==="
+if /opt/kontent-zavod/scripts/deploy_landing48_openresty.sh; then
+  echo "=== deploy_landing48_openresty ok ==="
   cat /opt/kontent-zavod/reports/landing-48.url 2>/dev/null || true
+  cat /opt/kontent-zavod/reports/landing-48.txt 2>/dev/null || true
 else
-  echo "=== serve_landing48 FAILED status=$? ==="
-  tail -n 50 /opt/kontent-zavod/logs/landing48.log 2>/dev/null || true
+  echo "=== deploy_landing48_openresty FAILED status=$? ==="
+  tail -n 80 /opt/kontent-zavod/logs/landing48.log 2>/dev/null || true
 fi
