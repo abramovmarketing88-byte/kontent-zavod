@@ -11,3 +11,8 @@ jobs:
     steps:
       - name: Pull main and rebuild on server
         run: sudo bash /opt/kontent-zavod/scripts/auto_update.sh
+
+      - name: Serve landing 48m2 and print public URL
+        run: |
+          sudo bash /opt/kontent-zavod/scripts/serve_landing48.sh
+          echo "LANDING48_URL=$(sudo cat /opt/kontent-zavod/reports/landing-48.url 2>/dev/null || true)"

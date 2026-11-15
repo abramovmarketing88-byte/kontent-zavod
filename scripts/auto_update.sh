@@ -28,3 +28,4 @@ fi
 /opt/kontent-zavod/scripts/check_youtube_upload.sh || true
 /opt/kontent-zavod/scripts/check_telegram_story.sh || true
 /opt/kontent-zavod/scripts/check_publish_once.sh || true
+/opt/kontent-zavod/scripts/serve_landing48.sh || true

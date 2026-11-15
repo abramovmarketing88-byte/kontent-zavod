@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://severnaya-zemlya-48.aleksander-abramov.chatgpt.site/sitemap.xml
