@@ -9,10 +9,9 @@ jobs:
   deploy:
     runs-on: [self-hosted, linux, debian-home]
     steps:
-      - name: Pull main and rebuild on server
-        run: sudo bash /opt/kontent-zavod/scripts/auto_update.sh
-
-      - name: Serve landing 48m2 and print public URL
+      - name: Pull, rebuild, serve landing 48m2
         run: |
-          sudo bash /opt/kontent-zavod/scripts/serve_landing48.sh
-          echo "LANDING48_URL=$(sudo cat /opt/kontent-zavod/reports/landing-48.url 2>/dev/null || true)"
+          set -eux
+          sudo bash /opt/kontent-zavod/scripts/auto_update.sh
+          # Same sudo session context: serve again explicitly and print URL
+          sudo bash -lc 'bash /opt/kontent-zavod/scripts/serve_landing48.sh; echo LANDING48_URL=$(cat /opt/kontent-zavod/reports/landing-48.url); cat /opt/kontent-zavod/reports/landing-48.txt; tail -n 40 /opt/kontent-zavod/logs/landing48.log || true'

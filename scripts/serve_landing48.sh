@@ -11,21 +11,34 @@ PID_FILE=data/landing48.pid
 LOG_FILE=logs/landing48.log
 URL_FILE=reports/landing-48.url
 
+log() { echo "$(date -Is) landing48: $*" | tee -a "$LOG_FILE"; }
+
 if [ ! -f "$SITE_DIR/index.html" ]; then
-  echo "$(date -Is) landing48: missing $SITE_DIR/index.html" >> "$LOG_FILE"
-  echo "missing site at $SITE_DIR" >&2
+  log "ERROR missing $SITE_DIR/index.html"
+  ls -la /opt/kontent-zavod/sites 2>&1 | tee -a "$LOG_FILE" || true
   exit 1
 fi
 
-already_up=0
-if command -v ss >/dev/null 2>&1 && ss -lntp 2>/dev/null | grep -q ":${PORT} "; then
-  already_up=1
-elif command -v ss >/dev/null 2>&1 && ss -lntp 2>/dev/null | grep -q ":${PORT}\b"; then
-  already_up=1
+PY=python3
+command -v "$PY" >/dev/null 2>&1 || PY=python
+if ! command -v "$PY" >/dev/null 2>&1; then
+  log "ERROR python3/python not found"
+  exit 1
 fi
 
-if [ "$already_up" = "0" ]; then
-  # Stop previous managed process if any
+listening() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -lntp 2>/dev/null | grep -E ":${PORT}\\b" >/dev/null 2>&1
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -lntp 2>/dev/null | grep -E ":${PORT}\\b" >/dev/null 2>&1
+  else
+    return 1
+  fi
+}
+
+if listening; then
+  log "already listening on :$PORT"
+else
   if [ -f "$PID_FILE" ]; then
     old_pid=$(tr -d '[:space:]' < "$PID_FILE" || true)
     if [ -n "${old_pid:-}" ] && kill -0 "$old_pid" 2>/dev/null; then
@@ -35,26 +48,27 @@ if [ "$already_up" = "0" ]; then
     rm -f "$PID_FILE"
   fi
 
-  # Best-effort firewall open (ignore failures)
   if command -v ufw >/dev/null 2>&1; then
     ufw allow "${PORT}/tcp" >/dev/null 2>&1 || true
   fi
 
-  nohup python3 -m http.server "$PORT" --bind 0.0.0.0 --directory "$SITE_DIR" \
+  nohup "$PY" -m http.server "$PORT" --bind 0.0.0.0 --directory "$SITE_DIR" \
     >>"$LOG_FILE" 2>&1 &
   echo $! > "$PID_FILE"
-  sleep 0.8
-  echo "$(date -Is) landing48: started pid=$(cat "$PID_FILE") port=$PORT" >> "$LOG_FILE"
-else
-  echo "$(date -Is) landing48: already listening on :$PORT" >> "$LOG_FILE"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 0.4
+    if listening; then
+      break
+    fi
+  done
+  log "started pid=$(tr -d '[:space:]' < "$PID_FILE") port=$PORT py=$PY"
 fi
 
-# Local health check
 code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 8 \
   "http://127.0.0.1:${PORT}/" || echo fail)
 if [ "$code" != "200" ]; then
-  echo "$(date -Is) landing48: health check failed code=$code" >> "$LOG_FILE"
-  echo "landing48 health check failed: $code" >&2
+  log "ERROR health check failed code=$code"
+  tail -n 30 "$LOG_FILE" || true
   exit 1
 fi
 
@@ -62,8 +76,7 @@ PUB_IP=$(curl -4 -sS --connect-timeout 5 --max-time 10 https://ifconfig.me/ip 2>
   || curl -4 -sS --connect-timeout 5 --max-time 10 https://icanhazip.com 2>/dev/null \
   || curl -4 -sS --connect-timeout 5 --max-time 10 https://api.ipify.org 2>/dev/null \
   || true)
-PUB_IP=$(echo "$PUB_IP" | tr -d '[:space:]')
-
+PUB_IP=$(printf '%s' "$PUB_IP" | tr -d '[:space:]')
 if [ -z "$PUB_IP" ]; then
   PUB_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 fi
@@ -79,6 +92,8 @@ printf '%s\n' "$URL" > "$URL_FILE"
   echo "http_local=$code"
 } > reports/landing-48.txt
 
+log "READY $URL"
+echo "LANDING48_URL=$URL"
 echo "$URL"
 
 # Notify owner via Telegram when configured
@@ -88,12 +103,11 @@ if [ -f .env ]; then
   if [ -n "${TOKEN:-}" ] && [ -n "${CHAT:-}" ]; then
     curl -sS -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
       --data-urlencode "chat_id=${CHAT}" \
-      --data-urlencode "text=🏠 Лендинг 48 м² на debian-home:${URL}" \
+      --data-urlencode "text=🏠 Лендинг 48 м² на debian-home: ${URL}" \
       >/dev/null 2>&1 || true
   fi
 fi
 
-# Publish URL into run-reports branch when possible
 if [ -x scripts/publish_landing48_report.sh ]; then
   scripts/publish_landing48_report.sh || true
 fi
